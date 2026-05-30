@@ -1,4 +1,4 @@
-import Phaser from "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.esm.js";
+import * as Phaser from "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.esm.js";
 
 export const WORLD_SIZE = 2400;
 export const HOUSE_RECT = new Phaser.Geom.Rectangle(1550, 250, 430, 330);
