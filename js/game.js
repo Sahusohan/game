@@ -45,7 +45,8 @@ const state = {
   sprites: new Map(),
   furniture: new Map(),
   actionSeen: new Set(),
-  music: null
+  music: null,
+  joystick: { active: false, x: 0, y: 0 }
 };
 
 class LittleWorldScene extends Phaser.Scene {
@@ -94,20 +95,19 @@ class LittleWorldScene extends Phaser.Scene {
     const body = this.localSprite.body;
     body.setVelocity(0);
 
+    const keyboardVector = getKeyboardVector(this);
+    const joystickVector = state.joystick.active ? state.joystick : { x: 0, y: 0 };
+    const moveX = keyboardVector.x || joystickVector.x;
+    const moveY = keyboardVector.y || joystickVector.y;
     let direction = "down";
-    if (this.keys.A.isDown || this.cursors.left.isDown) {
-      body.setVelocityX(-speed);
-      direction = "left";
-    } else if (this.keys.D.isDown || this.cursors.right.isDown) {
-      body.setVelocityX(speed);
-      direction = "right";
-    }
-    if (this.keys.W.isDown || this.cursors.up.isDown) {
-      body.setVelocityY(-speed);
-      direction = "up";
-    } else if (this.keys.S.isDown || this.cursors.down.isDown) {
-      body.setVelocityY(speed);
-      direction = "down";
+
+    if (moveX || moveY) {
+      body.setVelocity(moveX * speed, moveY * speed);
+      if (Math.abs(moveX) > Math.abs(moveY)) {
+        direction = moveX < 0 ? "left" : "right";
+      } else {
+        direction = moveY < 0 ? "up" : "down";
+      }
     }
 
     if (body.velocity.length() > 0) {
@@ -197,6 +197,7 @@ async function enterRoom(roomId, profile) {
     setupChatUI(new Chat(roomId, profile, state.multiplayer));
     setupSharedPanels(roomId, getLocalPosition, placeFurniture);
     setupActions(state.multiplayer, roomId, state.music);
+    setupJoystick();
     startGame();
     listenPlayers();
     listenConnection();
@@ -206,6 +207,65 @@ async function enterRoom(roomId, profile) {
     qs("#join-error").textContent = error.message || "Could not join this room.";
     qs("#join-room").disabled = false;
   }
+}
+
+function getKeyboardVector(scene) {
+  const x = Number(scene.keys.D.isDown || scene.cursors.right.isDown) -
+    Number(scene.keys.A.isDown || scene.cursors.left.isDown);
+  const y = Number(scene.keys.S.isDown || scene.cursors.down.isDown) -
+    Number(scene.keys.W.isDown || scene.cursors.up.isDown);
+  const length = Math.hypot(x, y) || 1;
+  return { x: x / length, y: y / length };
+}
+
+function setupJoystick() {
+  const base = qs("#joystick");
+  const thumb = qs("#joystick-thumb");
+  if (!base || base.dataset.ready) return;
+  base.dataset.ready = "true";
+
+  const reset = () => {
+    state.joystick = { active: false, x: 0, y: 0 };
+    base.classList.remove("active");
+    thumb.style.transform = "translate(-50%, -50%)";
+  };
+
+  const move = (event) => {
+    const rect = base.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const maxDistance = rect.width * 0.32;
+    const rawX = event.clientX - centerX;
+    const rawY = event.clientY - centerY;
+    const distance = Math.hypot(rawX, rawY);
+    const clamped = Math.min(distance, maxDistance);
+    const angle = Math.atan2(rawY, rawX);
+    const x = Math.cos(angle) * clamped;
+    const y = Math.sin(angle) * clamped;
+    const strength = clamped / maxDistance;
+
+    thumb.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    state.joystick = {
+      active: strength > 0.12,
+      x: strength > 0.12 ? (x / maxDistance) : 0,
+      y: strength > 0.12 ? (y / maxDistance) : 0
+    };
+  };
+
+  base.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    base.setPointerCapture(event.pointerId);
+    base.classList.add("active");
+    move(event);
+  });
+  base.addEventListener("pointermove", (event) => {
+    if (!base.classList.contains("active")) return;
+    event.preventDefault();
+    move(event);
+  });
+  base.addEventListener("pointerup", reset);
+  base.addEventListener("pointercancel", reset);
+  base.addEventListener("lostpointercapture", reset);
 }
 
 function startGame() {
