@@ -21,27 +21,47 @@ export class Multiplayer {
     this.roomId = roomId;
     this.profile = profile;
     this.uid = auth.currentUser.uid;
-    this.playerPath = `players/${this.uid}`;
+    this.playerKey = "";
+    this.playerPath = "";
     this.lastSentAt = 0;
   }
 
   async join() {
+    const slots = ["slot1", "slot2"];
+    let joined = false;
+
+    for (const [index, slotName] of slots.entries()) {
+      this.playerKey = slotName;
+      this.playerPath = `players/${slotName}`;
+      const userRef = roomRef(this.roomId, this.playerPath);
+
+      try {
+        await set(userRef, {
+          uid: this.uid,
+          name: this.profile.name,
+          avatar: this.profile.avatar,
+          x: START_POSITIONS[index].x,
+          y: START_POSITIONS[index].y,
+          direction: "down",
+          action: "",
+          online: true,
+          joinedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        joined = true;
+        break;
+      } catch {
+        joined = false;
+      }
+    }
+
+    if (!joined) {
+      this.playerKey = "";
+      this.playerPath = "";
+      throw new Error("This room already has two players.");
+    }
+
     const userRef = roomRef(this.roomId, this.playerPath);
-    const slot = this.uid.charCodeAt(0) % START_POSITIONS.length;
-    await set(userRef, {
-      uid: this.uid,
-      name: this.profile.name,
-      avatar: this.profile.avatar,
-      x: START_POSITIONS[slot].x,
-      y: START_POSITIONS[slot].y,
-      direction: "down",
-      action: "",
-      online: true,
-      joinedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }).catch(() => {
-      throw new Error("This room already has two players, or you do not have access.");
-    });
 
     await update(roomRef(this.roomId, "settings"), {
       roomId: this.roomId,
@@ -102,6 +122,7 @@ export class Multiplayer {
   }
 
   async resetMe() {
-    await remove(ref(db, `rooms/${this.roomId}/players/${this.uid}`));
+    if (!this.playerKey) return;
+    await remove(ref(db, `rooms/${this.roomId}/players/${this.playerKey}`));
   }
 }

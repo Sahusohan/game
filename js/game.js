@@ -70,7 +70,7 @@ class LittleWorldScene extends Phaser.Scene {
       y: 520,
       online: true
     });
-    state.sprites.set(auth.currentUser.uid, this.localSprite);
+    state.sprites.set(state.multiplayer.playerKey, this.localSprite);
     this.cameras.main.startFollow(this.localSprite, true, 0.12, 0.12);
     this.cameras.main.setZoom(window.innerWidth < 760 ? 1.35 : 1.65);
 
@@ -125,9 +125,9 @@ class LittleWorldScene extends Phaser.Scene {
       direction
     });
 
-    for (const [uid, sprite] of state.sprites.entries()) {
-      if (uid === auth.currentUser.uid) continue;
-      const player = state.players[uid];
+    for (const [playerKey, sprite] of state.sprites.entries()) {
+      if (playerKey === state.multiplayer.playerKey) continue;
+      const player = state.players[playerKey];
       if (!player) continue;
       if (qs("#smooth-toggle").checked) {
         sprite.x = Phaser.Math.Linear(sprite.x, player.x, Math.min(1, delta / 90));
@@ -233,30 +233,30 @@ function listenPlayers() {
     const online = Object.values(players).filter((player) => player.online).length;
     qs("#presence-label").textContent = `${online}/2 online`;
 
-    for (const [uid, player] of Object.entries(players)) {
+    for (const [playerKey, player] of Object.entries(players)) {
       if (!state.scene) continue;
-      let sprite = state.sprites.get(uid);
+      let sprite = state.sprites.get(playerKey);
       if (!sprite) {
         sprite = createPlayerSprite(state.scene, player);
-        state.sprites.set(uid, sprite);
+        state.sprites.set(playerKey, sprite);
       }
-      if (uid === auth.currentUser.uid && state.scene.localSprite) {
+      if (playerKey === state.multiplayer.playerKey && state.scene.localSprite) {
         sprite = state.scene.localSprite;
       }
-      handlePlayerAction(uid, player, sprite);
+      handlePlayerAction(playerKey, player, sprite);
       updatePlayerSprite(sprite, player);
     }
 
-    for (const [uid, sprite] of state.sprites.entries()) {
-      if (!players[uid]) {
+    for (const [playerKey, sprite] of state.sprites.entries()) {
+      if (!players[playerKey]) {
         destroyPlayerSprite(sprite);
-        state.sprites.delete(uid);
+        state.sprites.delete(playerKey);
       }
     }
   });
 }
 
-function handlePlayerAction(uid, player, sprite) {
+function handlePlayerAction(playerKey, player, sprite) {
   if (!player.actionId || state.actionSeen.has(player.actionId)) return;
   state.actionSeen.add(player.actionId);
   const scene = state.scene;

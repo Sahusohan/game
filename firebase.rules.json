@@ -4,10 +4,10 @@
     ".write": false,
     "rooms": {
       "$roomId": {
-        ".read": "auth != null && data.child('players').child(auth.uid).exists()",
+        ".read": "auth != null && (data.child('players').child('slot1').child('uid').val() === auth.uid || data.child('players').child('slot2').child('uid').val() === auth.uid)",
         "players": {
-          "$uid": {
-            ".write": "auth != null && auth.uid === $uid && newData.child('uid').val() === auth.uid && newData.parent().numChildren() <= 2",
+          "slot1": {
+            ".write": "auth != null && (!data.exists() || data.child('uid').val() === auth.uid) && newData.child('uid').val() === auth.uid",
             ".validate": "newData.hasChildren(['uid','name','avatar','x','y','online','updatedAt']) && newData.child('name').isString() && newData.child('name').val().length <= 18 && newData.child('avatar').isString() && newData.child('avatar').val().matches(/^(rose|mint|sunset|moon)$/) && newData.child('x').isNumber() && newData.child('x').val() >= 0 && newData.child('x').val() <= 2400 && newData.child('y').isNumber() && newData.child('y').val() >= 0 && newData.child('y').val() <= 2400 && newData.child('online').isBoolean()",
             "uid": { ".validate": "newData.val() === auth.uid" },
             "name": { ".validate": "newData.isString() && newData.val().length <= 18" },
@@ -24,19 +24,41 @@
             "updatedAt": { ".validate": "newData.isNumber()" },
             "lastSeen": { ".validate": "newData.isNumber()" },
             "$other": { ".validate": false }
+          },
+          "slot2": {
+            ".write": "auth != null && root.child('rooms').child($roomId).child('players').child('slot1').exists() && (!data.exists() || data.child('uid').val() === auth.uid) && newData.child('uid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['uid','name','avatar','x','y','online','updatedAt']) && newData.child('name').isString() && newData.child('name').val().length <= 18 && newData.child('avatar').isString() && newData.child('avatar').val().matches(/^(rose|mint|sunset|moon)$/) && newData.child('x').isNumber() && newData.child('x').val() >= 0 && newData.child('x').val() <= 2400 && newData.child('y').isNumber() && newData.child('y').val() >= 0 && newData.child('y').val() <= 2400 && newData.child('online').isBoolean()",
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "name": { ".validate": "newData.isString() && newData.val().length <= 18" },
+            "avatar": { ".validate": "newData.isString() && newData.val().matches(/^(rose|mint|sunset|moon)$/)" },
+            "x": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2400" },
+            "y": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2400" },
+            "direction": { ".validate": "newData.isString() && newData.val().matches(/^(up|down|left|right)$/)" },
+            "action": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "actionId": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "actionAt": { ".validate": "newData.isNumber()" },
+            "typing": { ".validate": "newData.isBoolean()" },
+            "online": { ".validate": "newData.isBoolean()" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "lastSeen": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          },
+          "$other": {
+            ".validate": false
           }
         },
         "chat": {
           ".indexOn": ["createdAt"],
           "$messageId": {
-            ".write": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
             ".validate": "newData.hasChildren(['uid','name','text','createdAt']) && newData.child('uid').val() === auth.uid && newData.child('name').isString() && newData.child('name').val().length <= 18 && newData.child('text').isString() && newData.child('text').val().length <= 220"
           }
         },
         "world": {
           "furniture": {
             "$itemId": {
-              ".write": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
+              ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
               ".validate": "newData.hasChildren(['type','x','y','placedBy','createdAt']) && newData.child('placedBy').val() === auth.uid && newData.child('type').isString() && newData.child('type').val().matches(/^(sofa|lamp|plant|rug|table|frame)$/) && newData.child('x').isNumber() && newData.child('x').val() >= 1550 && newData.child('x').val() <= 1980 && newData.child('y').isNumber() && newData.child('y').val() >= 250 && newData.child('y').val() <= 580"
             }
           },
@@ -46,24 +68,24 @@
         },
         "memories": {
           "$memoryId": {
-            ".write": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
             ".validate": "newData.hasChildren(['uid','caption','image','album','createdAt']) && newData.child('uid').val() === auth.uid && newData.child('caption').isString() && newData.child('caption').val().length <= 120 && newData.child('album').isString() && newData.child('album').val().length <= 40 && newData.child('image').isString() && newData.child('image').val().length <= 900000"
           }
         },
         "gifts": {
           "$giftId": {
-            ".write": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
             ".validate": "newData.hasChildren(['uid','note','createdAt']) && newData.child('uid').val() === auth.uid && newData.child('note').isString() && newData.child('note').val().length <= 120"
           }
         },
         "diary": {
           "$entryId": {
-            ".write": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
             ".validate": "newData.hasChildren(['uid','text','createdAt']) && newData.child('uid').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500"
           }
         },
         "settings": {
-          ".write": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
+          ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
           ".validate": "newData.hasChildren(['roomId']) || newData.hasChildren(['anniversaryDate']) || newData.hasChildren(['loveMeter']) || newData.hasChildren(['music']) || newData.hasChildren(['updatedAt'])",
           "roomId": {
             ".validate": "newData.isString() && newData.val() === $roomId"
