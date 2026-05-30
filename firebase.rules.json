@@ -7,7 +7,7 @@
         ".read": "auth != null && data.child('players').child(auth.uid).exists()",
         "players": {
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid && newData.child('uid').val() === auth.uid && newData.parent().childrenCount() <= 2",
+            ".write": "auth != null && auth.uid === $uid && newData.child('uid').val() === auth.uid && newData.parent().numChildren() <= 2",
             ".validate": "newData.hasChildren(['uid','name','avatar','x','y','online','updatedAt']) && newData.child('name').isString() && newData.child('name').val().length <= 18 && newData.child('avatar').isString() && newData.child('avatar').val().matches(/^(rose|mint|sunset|moon)$/) && newData.child('x').isNumber() && newData.child('x').val() >= 0 && newData.child('x').val() <= 2400 && newData.child('y').isNumber() && newData.child('y').val() >= 0 && newData.child('y').val() <= 2400 && newData.child('online').isBoolean()",
             "uid": { ".validate": "newData.val() === auth.uid" },
             "name": { ".validate": "newData.isString() && newData.val().length <= 18" },

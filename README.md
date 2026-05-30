@@ -2,6 +2,7 @@
 
 Our Little World is a private two-player virtual world for a boyfriend and girlfriend. It runs entirely in the browser with Vanilla JS, Phaser, Firebase Anonymous Auth, and Firebase Realtime Database, so it can be hosted directly on GitHub Pages.
 
+
 ## Features
 
 - Two-player rooms with invite links and anonymous Firebase sign-in.
