@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f58ac8" />
+    <meta
+      name="description"
+      content="Our Little World is a tiny private multiplayer pixel world for two people."
+    />
+    <title>Our Little World</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div id="loading-screen" class="loading-screen">
+      <div class="loading-card">
+        <div class="pixel-heart"></div>
+        <h1>Our Little World</h1>
+        <p id="loading-text">Warming up your little universe...</p>
+      </div>
+    </div>
+
+    <main id="app" class="app-shell hidden">
+      <section id="join-screen" class="join-screen">
+        <div class="join-panel glass">
+          <h1>Our Little World</h1>
+          <p>A private pastel world for just the two of you.</p>
+          <label>
+            Your name
+            <input id="player-name" maxlength="18" autocomplete="nickname" placeholder="Sweetheart" />
+          </label>
+          <label>
+            Room code
+            <div class="field-row">
+              <input id="room-code" maxlength="18" placeholder="LOVE123" />
+              <button id="random-room" class="icon-button" title="Create room code">↻</button>
+            </div>
+          </label>
+          <div class="avatar-picker" aria-label="Choose avatar">
+            <button class="avatar-choice selected" data-avatar="rose" title="Rose">♡</button>
+            <button class="avatar-choice" data-avatar="mint" title="Mint">✦</button>
+            <button class="avatar-choice" data-avatar="sunset" title="Sunset">☼</button>
+            <button class="avatar-choice" data-avatar="moon" title="Moon">☾</button>
+          </div>
+          <button id="join-room" class="primary-button">Enter World</button>
+          <p id="join-error" class="error-text" role="alert"></p>
+        </div>
+      </section>
+
+      <section id="game-screen" class="game-screen hidden">
+        <div id="game-container" class="game-container"></div>
+
+        <header class="topbar glass">
+          <div>
+            <strong id="room-label">Room</strong>
+            <span id="presence-label">Connecting...</span>
+          </div>
+          <div class="topbar-actions">
+            <button id="invite-button" title="Copy invite link">🔗</button>
+            <button id="fullscreen-button" title="Fullscreen">⛶</button>
+            <button id="settings-button" title="Settings">⚙</button>
+          </div>
+        </header>
+
+        <aside class="side-panel glass">
+          <nav class="tabs">
+            <button class="tab active" data-tab="chat">Chat</button>
+            <button class="tab" data-tab="diary">Diary</button>
+            <button class="tab" data-tab="memories">Memories</button>
+            <button class="tab" data-tab="home">Home</button>
+          </nav>
+
+          <section id="tab-chat" class="tab-panel active">
+            <div id="messages" class="messages"></div>
+            <div id="typing-indicator" class="typing-indicator"></div>
+            <form id="chat-form" class="chat-form">
+              <input id="chat-input" maxlength="220" placeholder="Message with emojis 💌" />
+              <button title="Send">➤</button>
+            </form>
+          </section>
+
+          <section id="tab-diary" class="tab-panel">
+            <div class="stats-grid">
+              <div><span id="anniversary-counter">0</span><small>days</small></div>
+              <div><span id="love-meter">0</span><small>love</small></div>
+            </div>
+            <label>
+              Anniversary date
+              <input id="anniversary-date" type="date" />
+            </label>
+            <textarea id="diary-input" rows="4" maxlength="500" placeholder="Write a shared note..."></textarea>
+            <button id="save-diary" class="secondary-button">Save diary note</button>
+            <div id="diary-list" class="stack-list"></div>
+          </section>
+
+          <section id="tab-memories" class="tab-panel">
+            <label>
+              Memory image
+              <input id="memory-file" type="file" accept="image/*" />
+            </label>
+            <input id="memory-caption" maxlength="120" placeholder="Caption" />
+            <button id="add-memory" class="secondary-button">Add memory</button>
+            <div id="memory-list" class="memory-list"></div>
+          </section>
+
+          <section id="tab-home" class="tab-panel">
+            <div class="furniture-grid">
+              <button data-furniture="sofa">Sofa</button>
+              <button data-furniture="lamp">Lamp</button>
+              <button data-furniture="plant">Plant</button>
+              <button data-furniture="rug">Rug</button>
+              <button data-furniture="table">Table</button>
+              <button data-furniture="frame">Frame</button>
+            </div>
+            <p class="hint">Place furniture while inside the house.</p>
+            <div id="gift-list" class="stack-list"></div>
+          </section>
+        </aside>
+
+        <footer class="action-dock glass">
+          <button data-action="heart" title="Send hearts">♥</button>
+          <button data-action="hug" title="Hug">🫂</button>
+          <button data-action="kiss" title="Kiss">💋</button>
+          <button data-action="hands" title="Hold hands">🤝</button>
+          <button data-action="gift" title="Gift">🎁</button>
+          <button id="music-button" title="Music">♪</button>
+        </footer>
+
+        <div id="toast" class="toast"></div>
+        <dialog id="settings-dialog" class="settings-dialog glass">
+          <form method="dialog">
+            <h2>Settings</h2>
+            <label><input id="sound-toggle" type="checkbox" checked /> Ambient sound</label>
+            <label><input id="smooth-toggle" type="checkbox" checked /> Smooth partner movement</label>
+            <button class="primary-button">Done</button>
+          </form>
+        </dialog>
+      </section>
+    </main>
+
+    <script type="module" src="js/game.js"></script>
+  </body>
+</html>

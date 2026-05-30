@@ -1,0 +1,17 @@
+{
+  "name": "Our Little World",
+  "short_name": "Little World",
+  "description": "A private multiplayer pixel world for two.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffe8f4",
+  "theme_color": "#f58ac8",
+  "icons": [
+    {
+      "src": "assets/images/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
