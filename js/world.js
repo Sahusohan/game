@@ -1,12 +1,15 @@
-import * as Phaser from "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.esm.js";
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js";
 
 export const WORLD_SIZE = 2400;
-export const HOUSE_RECT = new Phaser.Geom.Rectangle(1550, 250, 430, 330);
+export const HOUSE_RECT = { x: 1550, y: 250, width: 430, height: 330 };
 export const BENCHES = [
   { x: 760, y: 770 },
   { x: 1050, y: 1320 },
   { x: 1780, y: 570 }
 ];
+
+const SCALE = 0.055;
+const HALF_WORLD = WORLD_SIZE / 2;
 
 const AVATAR_COLORS = {
   rose: { shirt: 0xf05fa8, hair: 0x5a3328, pants: 0x6d6ee8, accent: 0xffbddf },
@@ -15,185 +18,489 @@ const AVATAR_COLORS = {
   moon: { shirt: 0x6d6ee8, hair: 0x352b5f, pants: 0x26395f, accent: 0xdfe9ff }
 };
 
-export function createTextures(scene) {
-  const g = scene.make.graphics({ x: 0, y: 0, add: false });
-  const rect = (x, y, w, h, color) => {
-    g.fillStyle(color, 1);
-    g.fillRect(x, y, w, h);
+const MATERIALS = new Map();
+
+export function toWorldX(x) {
+  return (x - HALF_WORLD) * SCALE;
+}
+
+export function toWorldZ(y) {
+  return (y - HALF_WORLD) * SCALE;
+}
+
+export function fromWorldX(x) {
+  return x / SCALE + HALF_WORLD;
+}
+
+export function fromWorldZ(z) {
+  return z / SCALE + HALF_WORLD;
+}
+
+export function createWorld(container) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf5ecff);
+  scene.fog = new THREE.Fog(0xf5ecff, 75, 185);
+
+  const camera = new THREE.PerspectiveCamera(48, container.clientWidth / container.clientHeight, 0.1, 500);
+  camera.position.set(0, 34, 42);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.replaceChildren(renderer.domElement);
+
+  const sun = new THREE.DirectionalLight(0xffffff, 2.1);
+  sun.position.set(-38, 70, 28);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xffd5ec, 0x77b978, 1.65));
+
+  addGround(scene);
+  addPaths(scene);
+  addLake(scene);
+  addBeach(scene);
+  addPark(scene);
+  addHouse(scene);
+  addDecor(scene);
+
+  const nightOverlay = new THREE.HemisphereLight(0xaab7ff, 0x42505a, 0);
+  scene.add(nightOverlay);
+
+  const world = {
+    scene,
+    camera,
+    renderer,
+    clock: new THREE.Clock(),
+    floating: [],
+    nightOverlay,
+    dispose() {
+      renderer.dispose();
+      container.replaceChildren();
+    },
+    resize() {
+      const width = container.clientWidth || window.innerWidth;
+      const height = container.clientHeight || window.innerHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    }
   };
 
-  Object.entries(AVATAR_COLORS).forEach(([name, colors]) => {
-    g.clear();
-    rect(13, 5, 16, 6, colors.hair);
-    rect(10, 11, 22, 18, 0xf2b38f);
-    rect(10, 10, 5, 10, colors.hair);
-    rect(27, 10, 5, 10, colors.hair);
-    rect(15, 17, 4, 4, 0x432947);
-    rect(24, 17, 4, 4, 0x432947);
-    rect(18, 24, 8, 2, 0xa74f68);
-    rect(12, 30, 18, 16, colors.shirt);
-    rect(8, 32, 5, 15, 0xf2b38f);
-    rect(30, 32, 5, 15, 0xf2b38f);
-    rect(16, 46, 5, 9, colors.pants);
-    rect(23, 46, 5, 9, colors.pants);
-    rect(14, 54, 8, 4, 0x31243a);
-    rect(22, 54, 8, 4, 0x31243a);
-    rect(15, 31, 12, 3, colors.accent);
-    g.generateTexture(`avatar-${name}`, 42, 60);
+  window.addEventListener("resize", () => world.resize());
+  return world;
+}
+
+export function createPlayerSprite(world, player) {
+  const colors = AVATAR_COLORS[player.avatar || "rose"] || AVATAR_COLORS.rose;
+  const group = new THREE.Group();
+  group.position.set(toWorldX(player.x), 0, toWorldZ(player.y));
+  group.userData.mapX = player.x;
+  group.userData.mapY = player.y;
+  group.userData.targetX = player.x;
+  group.userData.targetY = player.y;
+  group.userData.name = player.name || "Love";
+
+  const skin = material(0xf2b38f);
+  const hair = material(colors.hair);
+  const shirt = material(colors.shirt);
+  const pants = material(colors.pants);
+  const dark = material(0x31243a);
+
+  addBox(group, [0, 2.15, 0], [0.72, 0.86, 0.55], skin);
+  addBox(group, [0, 2.62, -0.03], [0.82, 0.24, 0.62], hair);
+  addBox(group, [-0.46, 2.35, 0], [0.18, 0.48, 0.6], hair);
+  addBox(group, [0.46, 2.35, 0], [0.18, 0.48, 0.6], hair);
+  addBox(group, [-0.16, 2.16, -0.31], [0.08, 0.08, 0.05], dark);
+  addBox(group, [0.16, 2.16, -0.31], [0.08, 0.08, 0.05], dark);
+  addBox(group, [0, 1.38, 0], [0.82, 0.98, 0.5], shirt);
+  addBox(group, [-0.58, 1.36, 0], [0.2, 0.82, 0.24], skin);
+  addBox(group, [0.58, 1.36, 0], [0.2, 0.82, 0.24], skin);
+  addBox(group, [-0.22, 0.48, 0], [0.28, 0.9, 0.28], pants);
+  addBox(group, [0.22, 0.48, 0], [0.28, 0.9, 0.28], pants);
+  addBox(group, [-0.22, 0.05, -0.08], [0.36, 0.16, 0.42], dark);
+  addBox(group, [0.22, 0.05, -0.08], [0.36, 0.16, 0.42], dark);
+
+  group.userData.label = createTextSprite(player.name || "Love", {
+    fontSize: 44,
+    color: "#432947",
+    background: "rgba(255,255,255,0.82)"
   });
+  group.userData.label.position.set(0, 3.35, 0);
+  group.add(group.userData.label);
 
-  g.clear();
-  rect(0, 0, 48, 70, 0x7d4d31);
-  rect(0, 0, 16, 16, 0x4fb66e);
-  rect(16, 0, 16, 16, 0x48a861);
-  rect(32, 0, 16, 16, 0x4fb66e);
-  rect(8, 14, 32, 22, 0x58c878);
-  rect(18, 36, 12, 34, 0x875738);
-  g.generateTexture("tree", 48, 70);
+  group.userData.statusDot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 12, 12),
+    material(player.online ? 0x5de08d : 0xb0a2b4)
+  );
+  group.userData.statusDot.position.set(0.86, 3.2, 0);
+  group.add(group.userData.statusDot);
 
-  g.clear();
-  rect(2, 9, 4, 10, 0x4fb66e);
-  rect(0, 3, 8, 8, 0xf05fa8);
-  rect(8, 0, 8, 8, 0xffd2ec);
-  rect(7, 7, 5, 5, 0xffee7c);
-  g.generateTexture("flower", 18, 22);
-
-  g.clear();
-  rect(0, 8, 80, 12, 0x8b5a3a);
-  rect(8, 0, 64, 8, 0xa96b44);
-  rect(10, 20, 8, 22, 0x5a3b2c);
-  rect(62, 20, 8, 22, 0x5a3b2c);
-  g.generateTexture("bench", 80, 44);
-
-  g.clear();
-  rect(0, 60, 210, 150, 0xfff5fb);
-  rect(30, 104, 52, 106, 0x8d62d7);
-  rect(120, 92, 52, 44, 0x94d4ff);
-  rect(18, 42, 174, 42, 0xf05fa8);
-  rect(0, 76, 210, 10, 0xe7c1dd);
-  g.generateTexture("house", 210, 210);
-
-  g.clear();
-  rect(0, 0, 32, 32, 0xf05fa8);
-  rect(10, 8, 12, 18, 0xffffff);
-  g.generateTexture("gift", 32, 32);
-  g.destroy();
+  world.scene.add(group);
+  return group;
 }
 
-export function drawWorld(scene) {
-  scene.cameras.main.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
-  scene.physics.world.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
+export function updatePlayerSprite(group, player, camera) {
+  group.userData.targetX = player.x;
+  group.userData.targetY = player.y;
+  group.userData.mapX = player.x;
+  group.userData.mapY = player.y;
 
-  const bg = scene.add.graphics();
-  bg.fillGradientStyle(0xaee6aa, 0xaee6aa, 0xf7de92, 0xf7de92, 1);
-  bg.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+  const name = player.name || "Love";
+  if (group.userData.name !== name) {
+    group.userData.name = name;
+    group.remove(group.userData.label);
+    group.userData.label.material.map.dispose();
+    group.userData.label.material.dispose();
+    group.userData.label = createTextSprite(name, {
+      fontSize: 44,
+      color: "#432947",
+      background: "rgba(255,255,255,0.82)"
+    });
+    group.userData.label.position.set(0, 3.35, 0);
+    group.add(group.userData.label);
+  }
 
-  drawLake(scene, 230, 260);
-  drawBeach(scene);
-  drawPark(scene);
-  drawPaths(scene);
-  drawHouse(scene);
-  scatterDecor(scene);
+  group.userData.statusDot.material.color.set(player.online ? 0x5de08d : 0xb0a2b4);
+  group.userData.label.lookAt(camera.position);
 }
 
-function drawLake(scene, x, y) {
-  const water = scene.add.graphics();
-  water.fillStyle(0x73c9f4, 0.92);
-  water.fillEllipse(x + 260, y + 190, 470, 280);
-  water.lineStyle(10, 0xdaf8ff, 0.7);
-  water.strokeEllipse(x + 260, y + 190, 470, 280);
-  scene.tweens.add({ targets: water, alpha: 0.72, yoyo: true, repeat: -1, duration: 2200 });
+export function destroyPlayerSprite(group, world) {
+  world.scene.remove(group);
+  group.traverse((node) => {
+    node.geometry?.dispose?.();
+    if (node.material?.map) node.material.map.dispose();
+    node.material?.dispose?.();
+  });
 }
 
-function drawBeach(scene) {
-  const beach = scene.add.graphics();
-  beach.fillStyle(0xffdf94, 1);
-  beach.fillRect(0, 1780, WORLD_SIZE, 620);
-  beach.fillStyle(0x66c9ef, 0.82);
-  beach.fillRect(0, 2040, WORLD_SIZE, 360);
-  for (let x = 0; x < WORLD_SIZE; x += 120) {
-    beach.fillStyle(0xffffff, 0.55);
-    beach.fillEllipse(x + 50, 2040, 80, 12);
+export function setPlayerPosition(group, x, y) {
+  group.userData.mapX = x;
+  group.userData.mapY = y;
+  group.position.set(toWorldX(x), 0, toWorldZ(y));
+}
+
+export function createFloatingText(world, target, text, color = "#ef4c9d", duration = 1400) {
+  const sprite = createTextSprite(text, {
+    fontSize: 46,
+    color,
+    background: "rgba(255,255,255,0.82)"
+  });
+  sprite.position.set(target.position.x, target.position.y + 3.7, target.position.z);
+  world.scene.add(sprite);
+  world.floating.push({
+    sprite,
+    target,
+    start: performance.now(),
+    duration,
+    follow: false,
+    offset: new THREE.Vector3(0, 3.8, 0)
+  });
+  return sprite;
+}
+
+export function createChatBubble(world, target, text) {
+  const sprite = createTextSprite(text.slice(0, 90), {
+    fontSize: 34,
+    color: "#432947",
+    background: "rgba(255,255,255,0.9)",
+    maxWidth: 360
+  });
+  sprite.position.copy(target.position).add(new THREE.Vector3(0, 4.15, 0));
+  world.scene.add(sprite);
+  world.floating.push({
+    sprite,
+    target,
+    start: performance.now(),
+    duration: 5000,
+    follow: true,
+    offset: new THREE.Vector3(0, 4.15, 0)
+  });
+}
+
+export function updateFloating(world) {
+  const now = performance.now();
+  world.floating = world.floating.filter((item) => {
+    const t = Math.min(1, (now - item.start) / item.duration);
+    if (item.follow && item.target.parent) {
+      item.sprite.position.copy(item.target.position).add(item.offset);
+    } else {
+      item.sprite.position.y += 0.012;
+    }
+    item.sprite.lookAt(world.camera.position);
+    item.sprite.material.opacity = t < 0.82 ? 1 : Math.max(0, 1 - (t - 0.82) / 0.18);
+    if (t < 1) return true;
+    world.scene.remove(item.sprite);
+    item.sprite.material.map.dispose();
+    item.sprite.material.dispose();
+    return false;
+  });
+}
+
+export function createFurniture(world, type, x, y) {
+  const group = new THREE.Group();
+  group.position.set(toWorldX(x), 0.05, toWorldZ(y));
+  const colors = {
+    sofa: 0xf58ac8,
+    lamp: 0xffd86b,
+    plant: 0x55caa4,
+    rug: 0x8d62d7,
+    table: 0xb47a50,
+    frame: 0x94d4ff
+  };
+
+  if (type === "rug") {
+    addBox(group, [0, 0.02, 0], [2.4, 0.04, 1.3], material(colors[type]));
+  } else if (type === "lamp") {
+    addBox(group, [0, 0.45, 0], [0.18, 0.9, 0.18], material(0x8d62d7));
+    addBox(group, [0, 1.05, 0], [0.8, 0.48, 0.8], material(colors[type]));
+  } else if (type === "plant") {
+    addBox(group, [0, 0.22, 0], [0.55, 0.42, 0.55], material(0xb47a50));
+    addCone(group, [0, 0.88, 0], 0.55, 0.9, material(colors[type]));
+  } else {
+    addBox(group, [0, 0.38, 0], [1.25, 0.72, 0.8], material(colors[type]));
+  }
+
+  world.scene.add(group);
+  return group;
+}
+
+export function isInsideHouse(x, y) {
+  return (
+    x >= HOUSE_RECT.x &&
+    x <= HOUSE_RECT.x + HOUSE_RECT.width &&
+    y >= HOUSE_RECT.y &&
+    y <= HOUSE_RECT.y + HOUSE_RECT.height
+  );
+}
+
+export function clampToWorld(value) {
+  return Math.max(0, Math.min(WORLD_SIZE, value));
+}
+
+function addGround(scene) {
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD_SIZE * SCALE, WORLD_SIZE * SCALE, 120, 120),
+    new THREE.MeshStandardMaterial({ color: 0xaee6aa, roughness: 0.95 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+}
+
+function addPaths(scene) {
+  const points = [
+    [520, 520],
+    [920, 880],
+    [1060, 1300],
+    [1730, 520]
+  ];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [ax, ay] = points[i];
+    const [bx, by] = points[i + 1];
+    addPathSegment(scene, ax, ay, bx, by, 2.4);
   }
 }
 
-function drawPark(scene) {
-  const park = scene.add.graphics();
-  park.fillStyle(0x8ee29a, 1);
-  park.fillRoundedRect(700, 1080, 620, 420, 30);
-  park.lineStyle(6, 0xffffff, 0.45);
-  park.strokeRoundedRect(700, 1080, 620, 420, 30);
+function addPathSegment(scene, ax, ay, bx, by, width) {
+  const x1 = toWorldX(ax);
+  const z1 = toWorldZ(ay);
+  const x2 = toWorldX(bx);
+  const z2 = toWorldZ(by);
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const length = Math.hypot(dx, dz);
+  const path = new THREE.Mesh(
+    new THREE.BoxGeometry(width, 0.05, length),
+    material(0xf7cfa9)
+  );
+  path.position.set((x1 + x2) / 2, 0.035, (z1 + z2) / 2);
+  path.rotation.y = Math.atan2(dx, dz);
+  path.receiveShadow = true;
+  scene.add(path);
 }
 
-function drawPaths(scene) {
-  const path = scene.add.graphics();
-  path.lineStyle(42, 0xf7cfa9, 1);
-  path.beginPath();
-  path.moveTo(520, 520);
-  path.lineTo(920, 880);
-  path.lineTo(1060, 1300);
-  path.lineTo(1730, 520);
-  path.strokePath();
-  path.lineStyle(18, 0xffefd9, 0.7);
-  path.strokePath();
+function addLake(scene) {
+  const lake = new THREE.Mesh(
+    new THREE.CircleGeometry(13.5, 64),
+    new THREE.MeshStandardMaterial({ color: 0x73c9f4, roughness: 0.35, metalness: 0.05 })
+  );
+  lake.scale.set(1.2, 0.68, 1);
+  lake.rotation.x = -Math.PI / 2;
+  lake.position.set(toWorldX(490), 0.07, toWorldZ(450));
+  scene.add(lake);
 }
 
-function drawHouse(scene) {
-  scene.add.image(1650, 305, "house").setOrigin(0, 0);
-  const interior = scene.add.graphics();
-  interior.fillStyle(0xfff2fb, 0.96);
-  interior.fillRoundedRect(HOUSE_RECT.x, HOUSE_RECT.y, HOUSE_RECT.width, HOUSE_RECT.height, 14);
-  interior.lineStyle(8, 0xe1c3f2, 1);
-  interior.strokeRoundedRect(HOUSE_RECT.x, HOUSE_RECT.y, HOUSE_RECT.width, HOUSE_RECT.height, 14);
-  interior.setDepth(-1);
+function addBeach(scene) {
+  const beach = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD_SIZE * SCALE, 620 * SCALE),
+    material(0xffdf94)
+  );
+  beach.rotation.x = -Math.PI / 2;
+  beach.position.set(0, 0.04, toWorldZ(2090));
+  scene.add(beach);
+
+  const ocean = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD_SIZE * SCALE, 360 * SCALE),
+    new THREE.MeshStandardMaterial({ color: 0x66c9ef, roughness: 0.4 })
+  );
+  ocean.rotation.x = -Math.PI / 2;
+  ocean.position.set(0, 0.06, toWorldZ(2220));
+  scene.add(ocean);
 }
 
-function scatterDecor(scene) {
+function addPark(scene) {
+  const park = new THREE.Mesh(
+    new THREE.BoxGeometry(620 * SCALE, 0.06, 420 * SCALE),
+    material(0x8ee29a)
+  );
+  park.position.set(toWorldX(1010), 0.05, toWorldZ(1290));
+  park.receiveShadow = true;
+  scene.add(park);
+}
+
+function addHouse(scene) {
+  const house = new THREE.Group();
+  house.position.set(toWorldX(1765), 0, toWorldZ(415));
+  addBox(house, [0, 1.7, 0], [9.6, 3.4, 6.8], material(0xfff5fb));
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(6.8, 2.2, 4),
+    material(0xf05fa8)
+  );
+  roof.position.set(0, 4.25, 0);
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true;
+  house.add(roof);
+  addBox(house, [-2.5, 0.85, -3.45], [1.45, 1.7, 0.16], material(0x8d62d7));
+  addBox(house, [2.35, 2.0, -3.5], [1.6, 1.1, 0.12], material(0x94d4ff));
+  scene.add(house);
+}
+
+function addDecor(scene) {
   const trees = [
     [140, 120], [360, 130], [750, 260], [1030, 240], [1380, 180], [2110, 220],
     [270, 850], [530, 960], [1430, 980], [2050, 850], [410, 1460], [1510, 1500],
     [2140, 1450], [580, 1650], [1340, 1740]
   ];
-  trees.forEach(([x, y]) => scene.add.image(x, y, "tree"));
-
-  BENCHES.forEach((bench) => scene.add.image(bench.x, bench.y, "bench"));
+  trees.forEach(([x, y]) => addTree(scene, x, y));
+  BENCHES.forEach((bench) => addBench(scene, bench.x, bench.y));
 
   for (let i = 0; i < 90; i += 1) {
     const x = 90 + ((i * 137) % 2150);
     const y = 120 + ((i * 89) % 1620);
-    if (Phaser.Geom.Rectangle.Contains(HOUSE_RECT, x, y)) continue;
-    scene.add.image(x, y, "flower").setScale(0.85 + (i % 3) * 0.15);
+    if (isInsideHouse(x, y)) continue;
+    addFlower(scene, x, y, i);
   }
 }
 
-export function createPlayerSprite(scene, player) {
-  const sprite = scene.physics.add.sprite(player.x, player.y, `avatar-${player.avatar || "rose"}`);
-  sprite.setCollideWorldBounds(true);
-  sprite.setDepth(10);
-  sprite.nameLabel = scene.add.text(player.x, player.y - 50, player.name || "Love", {
-    fontFamily: "monospace",
-    fontSize: "13px",
-    color: "#432947",
-    backgroundColor: "rgba(255,255,255,0.7)",
-    padding: { x: 5, y: 2 }
-  }).setOrigin(0.5).setDepth(11);
-  sprite.statusDot = scene.add.circle(player.x + 22, player.y - 35, 4, player.online ? 0x5de08d : 0xb0a2b4).setDepth(11);
+function addTree(scene, x, y) {
+  const tree = new THREE.Group();
+  tree.position.set(toWorldX(x), 0, toWorldZ(y));
+  addBox(tree, [0, 1.1, 0], [0.7, 2.2, 0.7], material(0x875738));
+  addCone(tree, [0, 3.1, 0], 1.6, 3.2, material(0x4fb66e));
+  addCone(tree, [0, 4.2, 0], 1.25, 2.3, material(0x58c878));
+  scene.add(tree);
+}
+
+function addBench(scene, x, y) {
+  const bench = new THREE.Group();
+  bench.position.set(toWorldX(x), 0, toWorldZ(y));
+  addBox(bench, [0, 0.72, 0], [3.0, 0.28, 0.7], material(0xa96b44));
+  addBox(bench, [0, 1.25, 0.32], [3.0, 0.28, 0.28], material(0x8b5a3a));
+  addBox(bench, [-1.1, 0.32, 0], [0.22, 0.64, 0.24], material(0x5a3b2c));
+  addBox(bench, [1.1, 0.32, 0], [0.22, 0.64, 0.24], material(0x5a3b2c));
+  scene.add(bench);
+}
+
+function addFlower(scene, x, y, i) {
+  const flower = new THREE.Group();
+  flower.position.set(toWorldX(x), 0, toWorldZ(y));
+  const petal = material(i % 2 ? 0xf05fa8 : 0xffd2ec);
+  addBox(flower, [0, 0.22, 0], [0.05, 0.42, 0.05], material(0x4fb66e));
+  addBox(flower, [0, 0.48, 0], [0.18, 0.18, 0.18], petal);
+  scene.add(flower);
+}
+
+function addBox(parent, position, size, mat) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
+  mesh.position.set(...position);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function addCone(parent, position, radius, height, mat) {
+  const mesh = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 6), mat);
+  mesh.position.set(...position);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function material(color) {
+  if (!MATERIALS.has(color)) {
+    MATERIALS.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.78 }));
+  }
+  return MATERIALS.get(color);
+}
+
+function createTextSprite(text, options = {}) {
+  const fontSize = options.fontSize || 40;
+  const padding = 18;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.font = `700 ${fontSize}px monospace`;
+  const maxWidth = options.maxWidth || 520;
+  const lines = wrapText(ctx, text, maxWidth);
+  const width = Math.min(maxWidth + padding * 2, Math.max(180, Math.ceil(Math.max(...lines.map((line) => ctx.measureText(line).width)) + padding * 2)));
+  const height = lines.length * (fontSize + 6) + padding * 2;
+  canvas.width = width;
+  canvas.height = height;
+  ctx.font = `700 ${fontSize}px monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  roundRect(ctx, 0, 0, width, height, 18, options.background || "rgba(255,255,255,0.86)");
+  ctx.fillStyle = options.color || "#432947";
+  lines.forEach((line, index) => {
+    ctx.fillText(line, width / 2, padding + fontSize / 2 + index * (fontSize + 6));
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+  const ratio = width / height;
+  sprite.scale.set(2.8 * ratio, 2.8, 1);
   return sprite;
 }
 
-export function updatePlayerSprite(sprite, player) {
-  sprite.nameLabel.setText(player.name || "Love");
-  sprite.nameLabel.setPosition(sprite.x, sprite.y - 50);
-  sprite.statusDot.setFillStyle(player.online ? 0x5de08d : 0xb0a2b4);
-  sprite.statusDot.setPosition(sprite.x + 22, sprite.y - 35);
+function wrapText(ctx, text, maxWidth) {
+  const words = String(text || "").split(/\s+/);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  return lines.slice(0, 3);
 }
 
-export function destroyPlayerSprite(sprite) {
-  sprite.nameLabel?.destroy();
-  sprite.statusDot?.destroy();
-  sprite.destroy();
-}
-
-export function isInsideHouse(x, y) {
-  return Phaser.Geom.Rectangle.Contains(HOUSE_RECT, x, y);
+function roundRect(ctx, x, y, width, height, radius, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, radius);
+  ctx.arcTo(x + width, y + height, x, y + height, radius);
+  ctx.arcTo(x, y + height, x, y, radius);
+  ctx.arcTo(x, y, x + width, y, radius);
+  ctx.closePath();
+  ctx.fill();
 }

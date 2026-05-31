@@ -1,4 +1,3 @@
-import * as Phaser from "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.esm.js";
 import {
   auth,
   roomRef,
@@ -19,12 +18,19 @@ import { Chat } from "./chat.js";
 import {
   BENCHES,
   WORLD_SIZE,
-  createTextures,
-  drawWorld,
+  createWorld,
   createPlayerSprite,
   updatePlayerSprite,
   destroyPlayerSprite,
-  isInsideHouse
+  setPlayerPosition,
+  createFloatingText,
+  createChatBubble,
+  updateFloating,
+  createFurniture,
+  isInsideHouse,
+  clampToWorld,
+  toWorldX,
+  toWorldZ
 } from "./world.js";
 import {
   qs,
@@ -40,114 +46,24 @@ const state = {
   roomId: "",
   profile: null,
   multiplayer: null,
-  scene: null,
+  world: null,
   players: {},
   sprites: new Map(),
   furniture: new Map(),
   actionSeen: new Set(),
   music: null,
-  joystick: { active: false, x: 0, y: 0 }
+  joystick: { active: false, x: 0, y: 0 },
+  keys: new Set(),
+  localPlayer: null,
+  animationFrame: 0
 };
-
-class LittleWorldScene extends Phaser.Scene {
-  constructor() {
-    super("LittleWorldScene");
-    this.cursors = null;
-    this.keys = null;
-    this.localSprite = null;
-    this.nightOverlay = null;
-  }
-
-  preload() {}
-
-  create() {
-    state.scene = this;
-    createTextures(this);
-    drawWorld(this);
-
-    this.localSprite = createPlayerSprite(this, {
-      ...state.profile,
-      x: 540,
-      y: 520,
-      online: true
-    });
-    state.sprites.set(state.multiplayer.playerKey, this.localSprite);
-    this.cameras.main.startFollow(this.localSprite, true, 0.12, 0.12);
-    this.cameras.main.setZoom(window.innerWidth < 760 ? 1.35 : 1.65);
-
-    this.keys = this.input.keyboard.addKeys("W,A,S,D");
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.nightOverlay = this.add.rectangle(0, 0, WORLD_SIZE, WORLD_SIZE, 0x2a1f5f, 0).setOrigin(0).setDepth(100);
-    this.nightOverlay.setScrollFactor(0);
-    this.nightOverlay.setSize(window.innerWidth, window.innerHeight);
-
-    this.scale.on("resize", (size) => {
-      this.cameras.main.setZoom(size.width < 760 ? 1.35 : 1.65);
-      this.nightOverlay.setSize(size.width, size.height);
-    });
-
-    listenWorldState(this);
-  }
-
-  update(_, delta) {
-    if (!this.localSprite || !state.multiplayer) return;
-    const speed = 150;
-    const body = this.localSprite.body;
-    body.setVelocity(0);
-
-    const keyboardVector = getKeyboardVector(this);
-    const joystickVector = state.joystick.active ? state.joystick : { x: 0, y: 0 };
-    const moveX = keyboardVector.x || joystickVector.x;
-    const moveY = keyboardVector.y || joystickVector.y;
-    let direction = "down";
-
-    if (moveX || moveY) {
-      body.setVelocity(moveX * speed, moveY * speed);
-      if (Math.abs(moveX) > Math.abs(moveY)) {
-        direction = moveX < 0 ? "left" : "right";
-      } else {
-        direction = moveY < 0 ? "up" : "down";
-      }
-    }
-
-    if (body.velocity.length() > 0) {
-      body.velocity.normalize().scale(speed);
-      this.localSprite.setFlipX(direction === "left");
-    }
-
-    updatePlayerSprite(this.localSprite, {
-      ...state.profile,
-      online: true
-    });
-    state.multiplayer.updatePosition({
-      x: this.localSprite.x,
-      y: this.localSprite.y,
-      direction
-    });
-
-    for (const [playerKey, sprite] of state.sprites.entries()) {
-      if (playerKey === state.multiplayer.playerKey) continue;
-      const player = state.players[playerKey];
-      if (!player) continue;
-      if (qs("#smooth-toggle").checked) {
-        sprite.x = Phaser.Math.Linear(sprite.x, player.x, Math.min(1, delta / 90));
-        sprite.y = Phaser.Math.Linear(sprite.y, player.y, Math.min(1, delta / 90));
-      } else {
-        sprite.setPosition(player.x, player.y);
-      }
-      updatePlayerSprite(sprite, player);
-    }
-
-    const dayAmount = (Math.sin(Date.now() / 24000) + 1) / 2;
-    this.nightOverlay.setAlpha(0.04 + (1 - dayAmount) * 0.3);
-  }
-}
 
 async function boot() {
   qs("#loading-text").textContent = "Signing in anonymously...";
   await signIn();
   setupTabs();
   setupJoinScreen();
+  setupKeyboard();
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
@@ -210,11 +126,122 @@ async function enterRoom(roomId, profile) {
   }
 }
 
-function getKeyboardVector(scene) {
-  const x = Number(scene.keys.D.isDown || scene.cursors.right.isDown) -
-    Number(scene.keys.A.isDown || scene.cursors.left.isDown);
-  const y = Number(scene.keys.S.isDown || scene.cursors.down.isDown) -
-    Number(scene.keys.W.isDown || scene.cursors.up.isDown);
+function startGame() {
+  state.world = createWorld(qs("#game-container"));
+  state.localPlayer = {
+    uid: auth.currentUser.uid,
+    name: state.profile.name,
+    avatar: state.profile.avatar,
+    x: 540,
+    y: 520,
+    online: true
+  };
+  const localSprite = createPlayerSprite(state.world, state.localPlayer);
+  state.sprites.set(state.multiplayer.playerKey, localSprite);
+  animate();
+}
+
+function setupKeyboard() {
+  window.addEventListener("keydown", (event) => {
+    if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+    state.keys.add(event.key.toLowerCase());
+  });
+  window.addEventListener("keyup", (event) => {
+    state.keys.delete(event.key.toLowerCase());
+  });
+}
+
+function animate() {
+  const world = state.world;
+  if (!world) return;
+  const delta = Math.min(world.clock.getDelta(), 0.05);
+
+  updateLocalPlayer(delta);
+  updateRemotePlayers(delta);
+  updateCamera(delta);
+  updateDayNight();
+  updateFloating(world);
+  world.renderer.render(world.scene, world.camera);
+  state.animationFrame = requestAnimationFrame(animate);
+}
+
+function updateLocalPlayer(delta) {
+  if (!state.localPlayer || !state.multiplayer) return;
+  const sprite = state.sprites.get(state.multiplayer.playerKey);
+  if (!sprite) return;
+
+  const keyboardVector = getKeyboardVector();
+  const joystickVector = state.joystick.active ? state.joystick : { x: 0, y: 0 };
+  const moveX = keyboardVector.x || joystickVector.x;
+  const moveY = keyboardVector.y || joystickVector.y;
+  const speed = 185;
+
+  let direction = state.localPlayer.direction || "down";
+  if (moveX || moveY) {
+    state.localPlayer.x = clampToWorld(state.localPlayer.x + moveX * speed * delta);
+    state.localPlayer.y = clampToWorld(state.localPlayer.y + moveY * speed * delta);
+    if (Math.abs(moveX) > Math.abs(moveY)) {
+      direction = moveX < 0 ? "left" : "right";
+    } else {
+      direction = moveY < 0 ? "up" : "down";
+    }
+    rotatePlayer(sprite, direction);
+  }
+
+  state.localPlayer.direction = direction;
+  setPlayerPosition(sprite, state.localPlayer.x, state.localPlayer.y);
+  updatePlayerSprite(sprite, state.localPlayer, state.world.camera);
+  state.multiplayer.updatePosition({
+    x: state.localPlayer.x,
+    y: state.localPlayer.y,
+    direction
+  });
+}
+
+function updateRemotePlayers(delta) {
+  for (const [playerKey, sprite] of state.sprites.entries()) {
+    if (playerKey === state.multiplayer.playerKey) continue;
+    const player = state.players[playerKey];
+    if (!player) continue;
+    const targetX = toWorldX(player.x);
+    const targetZ = toWorldZ(player.y);
+    const t = qs("#smooth-toggle").checked ? Math.min(1, delta * 9) : 1;
+    sprite.position.x += (targetX - sprite.position.x) * t;
+    sprite.position.z += (targetZ - sprite.position.z) * t;
+    sprite.userData.mapX = player.x;
+    sprite.userData.mapY = player.y;
+    rotatePlayer(sprite, player.direction || "down");
+    updatePlayerSprite(sprite, player, state.world.camera);
+  }
+}
+
+function updateCamera(delta) {
+  const sprite = state.sprites.get(state.multiplayer.playerKey);
+  if (!sprite) return;
+  const camera = state.world.camera;
+  const target = sprite.position;
+  const desired = {
+    x: target.x,
+    y: window.innerWidth < 760 ? 28 : 36,
+    z: target.z + (window.innerWidth < 760 ? 34 : 42)
+  };
+  const t = Math.min(1, delta * 4);
+  camera.position.x += (desired.x - camera.position.x) * t;
+  camera.position.y += (desired.y - camera.position.y) * t;
+  camera.position.z += (desired.z - camera.position.z) * t;
+  camera.lookAt(target.x, 1.5, target.z);
+}
+
+function updateDayNight() {
+  const dayAmount = (Math.sin(Date.now() / 24000) + 1) / 2;
+  state.world.nightOverlay.intensity = (1 - dayAmount) * 0.8;
+}
+
+function getKeyboardVector() {
+  const x = Number(state.keys.has("d") || state.keys.has("arrowright")) -
+    Number(state.keys.has("a") || state.keys.has("arrowleft"));
+  const y = Number(state.keys.has("s") || state.keys.has("arrowdown")) -
+    Number(state.keys.has("w") || state.keys.has("arrowup"));
   const length = Math.hypot(x, y) || 1;
   return { x: x / length, y: y / length };
 }
@@ -281,25 +308,6 @@ function setupCollapsibleChat() {
   });
 }
 
-function startGame() {
-  new Phaser.Game({
-    type: Phaser.AUTO,
-    parent: "game-container",
-    backgroundColor: "#aee6aa",
-    scale: {
-      mode: Phaser.Scale.RESIZE,
-      width: window.innerWidth,
-      height: window.innerHeight
-    },
-    physics: {
-      default: "arcade",
-      arcade: { debug: false }
-    },
-    scene: LittleWorldScene,
-    pixelArt: true
-  });
-}
-
 function listenPlayers() {
   state.multiplayer.listenPlayers((players) => {
     state.players = players;
@@ -307,44 +315,42 @@ function listenPlayers() {
     qs("#presence-label").textContent = `${online}/2 online`;
 
     for (const [playerKey, player] of Object.entries(players)) {
-      if (!state.scene) continue;
+      if (!state.world) continue;
       let sprite = state.sprites.get(playerKey);
       if (!sprite) {
-        sprite = createPlayerSprite(state.scene, player);
+        sprite = createPlayerSprite(state.world, player);
         state.sprites.set(playerKey, sprite);
       }
-      if (playerKey === state.multiplayer.playerKey && state.scene.localSprite) {
-        sprite = state.scene.localSprite;
+      if (playerKey === state.multiplayer.playerKey) {
+        state.localPlayer = { ...state.localPlayer, ...player, uid: auth.currentUser.uid };
       }
-      handlePlayerAction(playerKey, player, sprite);
-      updatePlayerSprite(sprite, player);
+      handlePlayerAction(player, sprite);
+      updatePlayerSprite(sprite, player, state.world.camera);
     }
 
     for (const [playerKey, sprite] of state.sprites.entries()) {
       if (!players[playerKey]) {
-        destroyPlayerSprite(sprite);
+        destroyPlayerSprite(sprite, state.world);
         state.sprites.delete(playerKey);
       }
     }
   });
 }
 
-function handlePlayerAction(playerKey, player, sprite) {
+function handlePlayerAction(player, sprite) {
   if (!player.actionId || state.actionSeen.has(player.actionId)) return;
   state.actionSeen.add(player.actionId);
-  const scene = state.scene;
-  if (!scene || !sprite) return;
+  if (!state.world || !sprite) return;
 
-  if (player.action === "heart") makeFloatingText(scene, sprite.x, sprite.y - 42, "♥ ♥ ♥", "#ef4c9d");
-  if (player.action === "hug") makeFloatingText(scene, sprite.x, sprite.y - 42, "hug", "#8d62d7");
-  if (player.action === "kiss") makeFloatingText(scene, sprite.x, sprite.y - 42, "kiss", "#ef4c9d");
+  if (player.action === "heart") createFloatingText(state.world, sprite, "heart heart heart", "#ef4c9d");
+  if (player.action === "hug") createFloatingText(state.world, sprite, "hug", "#8d62d7");
+  if (player.action === "kiss") createFloatingText(state.world, sprite, "kiss", "#ef4c9d");
   if (player.action === "hands") {
-    makeFloatingText(scene, sprite.x, sprite.y - 42, "holding hands", "#55a887");
+    createFloatingText(state.world, sprite, "holding hands", "#55a887");
     maybeSitTogether(player);
   }
   if (player.action === "gift") {
-    scene.add.image(sprite.x, sprite.y - 28, "gift").setDepth(20);
-    makeFloatingText(scene, sprite.x, sprite.y - 58, "gift", "#ef4c9d");
+    createFloatingText(state.world, sprite, "gift", "#ef4c9d");
   }
 }
 
@@ -352,104 +358,39 @@ function maybeSitTogether(player) {
   const other = Object.values(state.players).find((item) => item.uid !== player.uid);
   if (!other) return;
   const bench = BENCHES.find((item) => {
-    const d1 = Phaser.Math.Distance.Between(player.x, player.y, item.x, item.y);
-    const d2 = Phaser.Math.Distance.Between(other.x, other.y, item.x, item.y);
+    const d1 = Math.hypot(player.x - item.x, player.y - item.y);
+    const d2 = Math.hypot(other.x - item.x, other.y - item.y);
     return d1 < 95 && d2 < 95;
   });
   if (bench) showToast("You are sitting together");
 }
 
-function makeFloatingText(scene, x, y, text, color) {
-  const node = scene.add.text(x, y, text, {
-    fontFamily: "monospace",
-    fontSize: "18px",
-    color,
-    backgroundColor: "rgba(255,255,255,0.76)",
-    padding: { x: 7, y: 4 }
-  }).setOrigin(0.5).setDepth(120);
-  scene.tweens.add({
-    targets: node,
-    y: y - 70,
-    alpha: 0,
-    duration: 1400,
-    ease: "Sine.easeOut",
-    onComplete: () => node.destroy()
-  });
-}
-
 function showChatBubble(message) {
-  const scene = state.scene;
-  if (!scene || !message?.text) return;
-
+  const world = state.world;
+  if (!world || !message?.text) return;
   const entry = Object.entries(state.players).find(([, player]) => player.uid === message.uid);
   const sprite = message.uid === auth.currentUser.uid
-    ? scene.localSprite
+    ? state.sprites.get(state.multiplayer.playerKey)
     : entry ? state.sprites.get(entry[0]) : null;
   if (!sprite) return;
-
-  const bubble = scene.add.text(sprite.x, sprite.y - 78, message.text.slice(0, 90), {
-    fontFamily: "monospace",
-    fontSize: "13px",
-    color: "#432947",
-    backgroundColor: "rgba(255,255,255,0.88)",
-    padding: { x: 8, y: 5 },
-    wordWrap: { width: 180 }
-  }).setOrigin(0.5, 1).setDepth(140);
-
-  const follow = () => {
-    if (!bubble.active || !sprite.active) return;
-    bubble.setPosition(sprite.x, sprite.y - 78);
-  };
-  scene.events.on("update", follow);
-  scene.time.delayedCall(4200, () => {
-    scene.tweens.add({
-      targets: bubble,
-      alpha: 0,
-      y: bubble.y - 10,
-      duration: 800,
-      ease: "Sine.easeIn",
-      onComplete: () => {
-        scene.events.off("update", follow);
-        bubble.destroy();
-      }
-    });
-  });
+  createChatBubble(world, sprite, message.text);
 }
 
-function listenWorldState(scene) {
+function listenWorldState() {
   onValue(roomRef(state.roomId, "world/furniture"), (snapshot) => {
     const items = snapshot.val() || {};
     for (const [id, node] of state.furniture.entries()) {
       if (!items[id]) {
-        node.destroy();
+        state.world.scene.remove(node);
         state.furniture.delete(id);
       }
     }
     Object.entries(items).forEach(([id, item]) => {
       if (state.furniture.has(id)) return;
-      const node = drawFurniture(scene, item.type, item.x, item.y);
+      const node = createFurniture(state.world, item.type, item.x, item.y);
       state.furniture.set(id, node);
     });
   });
-}
-
-function drawFurniture(scene, type, x, y) {
-  const colors = {
-    sofa: 0xf58ac8,
-    lamp: 0xffd86b,
-    plant: 0x55caa4,
-    rug: 0x8d62d7,
-    table: 0xb47a50,
-    frame: 0x94d4ff
-  };
-  const box = scene.add.rectangle(0, 0, type === "rug" ? 82 : 44, type === "rug" ? 38 : 44, colors[type] || 0xffffff);
-  box.setStrokeStyle(4, 0xffffff, 0.8);
-  const label = scene.add.text(0, 0, type[0].toUpperCase(), { fontFamily: "monospace", fontSize: "18px", color: "#432947" })
-    .setOrigin(0.5)
-    .setDepth(6);
-  const node = scene.add.container(x, y, [box, label]);
-  node.setDepth(5);
-  return node;
 }
 
 async function placeFurniture(type, x, y) {
@@ -464,12 +405,11 @@ async function placeFurniture(type, x, y) {
 }
 
 function getLocalPosition() {
-  const sprite = state.scene?.localSprite;
-  if (!sprite) return null;
+  if (!state.localPlayer) return null;
   return {
-    x: sprite.x,
-    y: sprite.y,
-    insideHouse: isInsideHouse(sprite.x, sprite.y)
+    x: state.localPlayer.x,
+    y: state.localPlayer.y,
+    insideHouse: isInsideHouse(state.localPlayer.x, state.localPlayer.y)
   };
 }
 
@@ -480,6 +420,7 @@ function listenConnection() {
   });
   window.addEventListener("beforeunload", () => {
     state.multiplayer?.leave();
+    cancelAnimationFrame(state.animationFrame);
   });
   window.addEventListener("online", () => showToast("Back online"));
   window.addEventListener("offline", () => showToast("Offline mode. Reconnecting soon."));
@@ -525,6 +466,16 @@ function listenMusic() {
     if (music.playing) state.music.start();
     else state.music.stop();
   });
+}
+
+function rotatePlayer(sprite, direction) {
+  const rotations = {
+    down: 0,
+    up: Math.PI,
+    left: -Math.PI / 2,
+    right: Math.PI / 2
+  };
+  sprite.rotation.y = rotations[direction] ?? sprite.rotation.y;
 }
 
 boot().catch((error) => {
