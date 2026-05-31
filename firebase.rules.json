@@ -72,9 +72,54 @@
         },
         "worldState": {
           ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
-          ".validate": "newData.hasChildren(['weather']) || newData.hasChildren(['updatedAt'])",
+          ".validate": "newData.hasChildren(['weather']) || newData.hasChildren(['updatedAt']) || newData.hasChildren(['game'])",
           "weather": {
             ".validate": "newData.isString() && newData.val().matches(/^(clear|rain|snow|sunset)$/)"
+          },
+          "game": {
+            ".validate": "newData.hasChildren(['mode','active','status','policeUid','thiefUid','durationSec','catchDistance','updatedAt'])",
+            "mode": {
+              ".validate": "newData.isString() && newData.val() === 'chase'"
+            },
+            "active": {
+              ".validate": "newData.isBoolean()"
+            },
+            "status": {
+              ".validate": "newData.isString() && newData.val().matches(/^(running|ended)$/)"
+            },
+            "policeUid": {
+              ".validate": "newData.isString() && newData.val().length <= 128"
+            },
+            "thiefUid": {
+              ".validate": "newData.isString() && newData.val().length <= 128"
+            },
+            "starterUid": {
+              ".validate": "newData.isString() && newData.val().length <= 128"
+            },
+            "winnerUid": {
+              ".validate": "newData.isString() && newData.val().length <= 128"
+            },
+            "reason": {
+              ".validate": "newData.isString() && newData.val().matches(/^(|caught|timeout)$/)"
+            },
+            "durationSec": {
+              ".validate": "newData.isNumber() && newData.val() >= 20 && newData.val() <= 300"
+            },
+            "catchDistance": {
+              ".validate": "newData.isNumber() && newData.val() >= 40 && newData.val() <= 180"
+            },
+            "startedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "endedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "updatedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
           },
           "updatedAt": {
             ".validate": "newData.isNumber()"

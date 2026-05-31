@@ -6,6 +6,7 @@ Our Little World 3D is a private two-player cozy virtual world built with Three.
 
 - Two-player rooms with invite links, anonymous sign-in, online/offline presence, and Firebase sync.
 - Three.js third-person world with forest, flower gardens, lake, waterfall, beach, mountain viewpoint, park, café, shared house, stars, fog, weather, and day/night lighting.
+- Chase mini-game mode: random police/thief role assignment, countdown, and catch-win logic.
 - 3D stylized avatars with idle/walk/run-style limb motion and action poses for hugs, kisses, hand holding, gifts, and hearts.
 - Third-person camera with smooth follow, mouse/touch look, wheel zoom, and mobile joystick.
 - Real-time chat with emoji support, typing indicator, message history, chat bubbles above characters, and browser voice messages.

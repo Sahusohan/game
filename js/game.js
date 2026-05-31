@@ -59,7 +59,13 @@ const state = {
   localPlayer: null,
   animationFrame: 0,
   camera: { yaw: 0, zoom: 1, dragging: false, lastX: 0 },
-  weather: "clear"
+  weather: "clear",
+  chase: {
+    game: null,
+    syncing: false,
+    lastRoleKey: "",
+    lastResultKey: ""
+  }
 };
 
 async function boot() {
@@ -119,10 +125,12 @@ async function enterRoom(roomId, profile) {
     setupActions(state.multiplayer, roomId, state.music);
     setupCollapsibleChat();
     setupJoystick();
+    setupChaseUI();
     startGame();
     setupCameraControls();
     listenPlayers();
     listenRoomSettings();
+    listenChaseGame();
     listenConnection();
     listenMusic();
     history.replaceState(null, "", `?room=${encodeURIComponent(roomId)}`);
@@ -167,6 +175,7 @@ function animate() {
   updateRemotePlayers(delta);
   updateCamera(delta);
   updateWorldEffects(world, state.weather);
+  updateChaseGame();
   updateFloating(world);
   world.renderer.render(world.scene, world.camera);
   state.animationFrame = requestAnimationFrame(animate);
@@ -181,7 +190,7 @@ function updateLocalPlayer(delta) {
   const joystickVector = state.joystick.active ? state.joystick : { x: 0, y: 0 };
   const moveX = keyboardVector.x || joystickVector.x;
   const moveY = keyboardVector.y || joystickVector.y;
-  const speed = 185;
+  const speed = getMovementSpeed();
 
   let direction = state.localPlayer.direction || "down";
   if (moveX || moveY) {
@@ -334,6 +343,176 @@ function setupCollapsibleChat() {
     const collapsed = panel.classList.toggle("collapsed");
     toggle.textContent = collapsed ? "Show chat" : "Hide chat";
   });
+}
+
+function setupChaseUI() {
+  const button = qs("#start-chase-button");
+  if (!button || button.dataset.ready) return;
+  button.dataset.ready = "true";
+  button.addEventListener("click", () => startChaseGame());
+}
+
+async function startChaseGame() {
+  const players = Object.values(state.players).filter((player) => player?.uid);
+  if (players.length < 2) {
+    showToast("Two players are needed to start chase mode");
+    return;
+  }
+  const pick = Math.random() < 0.5 ? 0 : 1;
+  const policeUid = players[pick].uid;
+  const thiefUid = players[1 - pick].uid;
+  state.chase.syncing = true;
+  await set(roomRef(state.roomId, "worldState/game"), {
+    mode: "chase",
+    active: true,
+    status: "running",
+    starterUid: auth.currentUser.uid,
+    policeUid,
+    thiefUid,
+    winnerUid: "",
+    reason: "",
+    durationSec: 70,
+    catchDistance: 90,
+    startedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  }).finally(() => {
+    state.chase.syncing = false;
+  });
+}
+
+function listenChaseGame() {
+  onValue(roomRef(state.roomId, "worldState/game"), (snapshot) => {
+    state.chase.game = snapshot.val() || null;
+    updateChaseHud();
+    announceChaseRole();
+    announceChaseResult();
+  });
+}
+
+function updateChaseHud() {
+  const status = qs("#chase-status");
+  const startButton = qs("#start-chase-button");
+  if (!status || !startButton) return;
+  const game = state.chase.game;
+  startButton.classList.toggle("running", Boolean(game?.active));
+  if (!game || !game.mode) {
+    status.textContent = "Chase: idle";
+    startButton.textContent = "Start Chase";
+    return;
+  }
+
+  const startedAt = getTimestampValue(game.startedAt);
+  if (game.status === "running" && startedAt && game.durationSec) {
+    const remainMs = Math.max(0, startedAt + game.durationSec * 1000 - Date.now());
+    const remainSec = Math.ceil(remainMs / 1000);
+    status.textContent = `Chase: ${remainSec}s`;
+    startButton.textContent = "Restart Chase";
+    return;
+  }
+
+  if (game.status === "ended") {
+    status.textContent = "Chase: finished";
+  } else {
+    status.textContent = "Chase: ready";
+  }
+  startButton.textContent = "Start Chase";
+}
+
+function announceChaseRole() {
+  const game = state.chase.game;
+  if (!game?.active || game.status !== "running") return;
+  const role = getLocalRole(game);
+  if (!role) return;
+  const key = `${getTimestampValue(game.startedAt)}:${role}`;
+  if (state.chase.lastRoleKey === key) return;
+  state.chase.lastRoleKey = key;
+  showToast(role === "police" ? "You are Police. Catch the Thief!" : "You are Thief. Run!");
+}
+
+function announceChaseResult() {
+  const game = state.chase.game;
+  if (!game || game.status !== "ended" || !game.winnerUid) return;
+  const key = `${game.endedAt || game.updatedAt}:${game.winnerUid}`;
+  if (state.chase.lastResultKey === key) return;
+  state.chase.lastResultKey = key;
+
+  const winner = game.winnerUid === auth.currentUser.uid ? "You win!" : "Partner wins!";
+  const reason = game.reason === "caught" ? "Police caught the thief" : "Time up";
+  showToast(`${winner} ${reason}`);
+  const winnerSprite = findSpriteByUid(game.winnerUid);
+  if (winnerSprite) createFloatingText(state.world, winnerSprite, "Winner!", "#ff4f9f", 2200);
+}
+
+function updateChaseGame() {
+  updateChaseHud();
+  const game = state.chase.game;
+  if (!game || !game.active || game.status !== "running" || state.chase.syncing) return;
+  const police = getPlayerByUid(game.policeUid);
+  const thief = getPlayerByUid(game.thiefUid);
+  if (!police || !thief) return;
+
+  const catchDistance = Number(game.catchDistance || 90);
+  const distance = Math.hypot(police.x - thief.x, police.y - thief.y);
+  if (getLocalRole(game) === "police" && distance <= catchDistance) {
+    finishChaseGame(game.policeUid, "caught");
+    return;
+  }
+
+  const startedAt = getTimestampValue(game.startedAt);
+  const isExpired = startedAt && game.durationSec && Date.now() >= (startedAt + game.durationSec * 1000);
+  if (isExpired) {
+    finishChaseGame(game.thiefUid, "timeout");
+  }
+}
+
+async function finishChaseGame(winnerUid, reason) {
+  const game = state.chase.game;
+  if (!game || game.status !== "running" || state.chase.syncing) return;
+  state.chase.syncing = true;
+  await update(roomRef(state.roomId, "worldState/game"), {
+    active: false,
+    status: "ended",
+    winnerUid,
+    reason,
+    endedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  }).finally(() => {
+    state.chase.syncing = false;
+  });
+}
+
+function getLocalRole(game) {
+  if (!game) return "";
+  if (game.policeUid === auth.currentUser.uid) return "police";
+  if (game.thiefUid === auth.currentUser.uid) return "thief";
+  return "";
+}
+
+function getMovementSpeed() {
+  const base = 185;
+  const game = state.chase.game;
+  if (!game || !game.active || game.status !== "running") return base;
+  const role = getLocalRole(game);
+  if (role === "police") return 200;
+  if (role === "thief") return 192;
+  return base;
+}
+
+function getPlayerByUid(uid) {
+  if (!uid) return null;
+  if (uid === auth.currentUser.uid && state.localPlayer) return state.localPlayer;
+  return Object.values(state.players).find((player) => player.uid === uid) || null;
+}
+
+function findSpriteByUid(uid) {
+  if (!uid) return null;
+  if (uid === auth.currentUser.uid) return state.sprites.get(state.multiplayer.playerKey) || null;
+  const entry = Object.entries(state.players).find(([, player]) => player.uid === uid);
+  return entry ? (state.sprites.get(entry[0]) || null) : null;
+}
+
+function getTimestampValue(value) {
+  return typeof value === "number" ? value : 0;
 }
 
 function listenPlayers() {

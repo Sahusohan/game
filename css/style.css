@@ -253,9 +253,24 @@ textarea:focus {
   font-size: 0.85rem;
 }
 
+.mini-status {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--purple);
+  font-weight: 800;
+}
+
 .topbar-actions {
   display: flex;
   gap: 8px;
+}
+
+#start-chase-button.running {
+  background: linear-gradient(135deg, #ef4c9d, #ff8d4f);
+  color: #fff;
 }
 
 .side-panel {
