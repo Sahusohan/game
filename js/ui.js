@@ -35,9 +35,12 @@ export function setupTabs() {
 export function setupChatUI(chat, onMessage) {
   const form = qs("#chat-form");
   const input = qs("#chat-input");
+  const voiceButton = qs("#voice-button");
   const messages = qs("#messages");
   const typing = qs("#typing-indicator");
   const chatStartedAt = Date.now();
+  let recorder = null;
+  let voiceChunks = [];
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -49,6 +52,34 @@ export function setupChatUI(chat, onMessage) {
 
   input.addEventListener("input", () => chat.markTyping());
 
+  voiceButton?.addEventListener("click", async () => {
+    if (recorder?.state === "recording") {
+      recorder.stop();
+      voiceButton.classList.remove("recording");
+      voiceButton.textContent = "●";
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      showToast("Voice recording is not supported here");
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceChunks = [];
+    recorder = new MediaRecorder(stream);
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data.size) voiceChunks.push(event.data);
+    });
+    recorder.addEventListener("stop", async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      const blob = new Blob(voiceChunks, { type: recorder.mimeType || "audio/webm" });
+      const audio = await blobToDataUrl(blob);
+      await chat.sendVoice(audio);
+    });
+    recorder.start();
+    voiceButton.classList.add("recording");
+    voiceButton.textContent = "■";
+  });
+
   chat.listenMessages((id, message) => {
     const node = document.createElement("article");
     node.className = `message ${message.uid === auth.currentUser.uid ? "mine" : ""}`;
@@ -59,6 +90,12 @@ export function setupChatUI(chat, onMessage) {
     node.innerHTML = `<header><strong></strong><span>${time}</span></header><p></p>`;
     node.querySelector("strong").textContent = message.name || "Love";
     node.querySelector("p").textContent = message.text || "";
+    if (message.type === "voice" && message.audio) {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = message.audio;
+      node.appendChild(audio);
+    }
     messages.appendChild(node);
     messages.scrollTop = messages.scrollHeight;
     if ((message.createdAt || Date.now()) >= chatStartedAt - 1500) {
@@ -68,6 +105,15 @@ export function setupChatUI(chat, onMessage) {
 
   chat.listenTyping((names) => {
     typing.textContent = names.length ? `${names.join(", ")} is typing...` : "";
+  });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
   });
 }
 

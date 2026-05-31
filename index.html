@@ -6,17 +6,25 @@
     <meta name="theme-color" content="#f58ac8" />
     <meta
       name="description"
-      content="Our Little World is a tiny private multiplayer pixel world for two people."
+      content="Our Little World 3D is a cozy private multiplayer 3D world for two people."
     />
-    <title>Our Little World</title>
+    <title>Our Little World 3D</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="css/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="loading-screen" class="loading-screen">
       <div class="loading-card">
         <div class="pixel-heart"></div>
-        <h1>Our Little World</h1>
+        <h1>Our Little World 3D</h1>
         <p id="loading-text">Warming up your little universe...</p>
       </div>
     </div>
@@ -24,8 +32,8 @@
     <main id="app" class="app-shell hidden">
       <section id="join-screen" class="join-screen">
         <div class="join-panel glass">
-          <h1>Our Little World</h1>
-          <p>A private pastel world for just the two of you.</p>
+          <h1>Our Little World 3D</h1>
+          <p>A private cozy 3D world for just the two of you.</p>
           <label>
             Your name
             <input id="player-name" maxlength="18" autocomplete="nickname" placeholder="Sweetheart" />
@@ -79,6 +87,7 @@
             <div id="typing-indicator" class="typing-indicator"></div>
             <form id="chat-form" class="chat-form">
               <input id="chat-input" maxlength="220" placeholder="Message with emojis 💌" />
+              <button id="voice-button" type="button" title="Record voice">●</button>
               <button title="Send">➤</button>
             </form>
           </section>
@@ -116,6 +125,12 @@
               <button data-furniture="table">Table</button>
               <button data-furniture="frame">Frame</button>
             </div>
+            <div class="swatch-row">
+              <button data-wall-color="fff5fb" style="--swatch:#fff5fb" title="Blush wall"></button>
+              <button data-wall-color="dfe9ff" style="--swatch:#dfe9ff" title="Moon wall"></button>
+              <button data-wall-color="c8ffe8" style="--swatch:#c8ffe8" title="Mint wall"></button>
+              <button data-wall-color="ffd37d" style="--swatch:#ffd37d" title="Sunset wall"></button>
+            </div>
             <p class="hint">Place furniture while inside the house.</p>
             <div id="gift-list" class="stack-list"></div>
           </section>
@@ -140,6 +155,15 @@
             <h2>Settings</h2>
             <label><input id="sound-toggle" type="checkbox" checked /> Ambient sound</label>
             <label><input id="smooth-toggle" type="checkbox" checked /> Smooth partner movement</label>
+            <label>
+              Weather
+              <select id="weather-select">
+                <option value="clear">Clear</option>
+                <option value="rain">Rain</option>
+                <option value="snow">Snow</option>
+                <option value="sunset">Sunset</option>
+              </select>
+            </label>
             <button class="primary-button">Done</button>
           </form>
         </dialog>

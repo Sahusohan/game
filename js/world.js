@@ -1,4 +1,5 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 export const WORLD_SIZE = 2400;
 export const HOUSE_RECT = { x: 1550, y: 250, width: 430, height: 330 };
@@ -19,6 +20,7 @@ const AVATAR_COLORS = {
 };
 
 const MATERIALS = new Map();
+const MODEL_LOADER = new GLTFLoader();
 
 export function toWorldX(x) {
   return (x - HALF_WORLD) * SCALE;
@@ -58,13 +60,23 @@ export function createWorld(container) {
   scene.add(sun);
   scene.add(new THREE.HemisphereLight(0xffd5ec, 0x77b978, 1.65));
 
+  const stars = createStars();
+  scene.add(stars);
+  const fireflies = createFireflies();
+  scene.add(fireflies);
+
   addGround(scene);
   addPaths(scene);
   addLake(scene);
   addBeach(scene);
   addPark(scene);
-  addHouse(scene);
+  addWaterfall(scene);
+  addMountain(scene);
+  addCafe(scene);
+  const houseWallMaterial = new THREE.MeshStandardMaterial({ color: 0xfff5fb, roughness: 0.78 });
+  addHouse(scene, houseWallMaterial);
   addDecor(scene);
+  const weather = createWeather(scene);
 
   const nightOverlay = new THREE.HemisphereLight(0xaab7ff, 0x42505a, 0);
   scene.add(nightOverlay);
@@ -76,6 +88,11 @@ export function createWorld(container) {
     clock: new THREE.Clock(),
     floating: [],
     nightOverlay,
+    sun,
+    stars,
+    fireflies,
+    weather,
+    houseWallMaterial,
     dispose() {
       renderer.dispose();
       container.replaceChildren();
@@ -116,12 +133,13 @@ export function createPlayerSprite(world, player) {
   addBox(group, [-0.16, 2.16, -0.31], [0.08, 0.08, 0.05], dark);
   addBox(group, [0.16, 2.16, -0.31], [0.08, 0.08, 0.05], dark);
   addBox(group, [0, 1.38, 0], [0.82, 0.98, 0.5], shirt);
-  addBox(group, [-0.58, 1.36, 0], [0.2, 0.82, 0.24], skin);
-  addBox(group, [0.58, 1.36, 0], [0.2, 0.82, 0.24], skin);
-  addBox(group, [-0.22, 0.48, 0], [0.28, 0.9, 0.28], pants);
-  addBox(group, [0.22, 0.48, 0], [0.28, 0.9, 0.28], pants);
+  const leftArm = addBox(group, [-0.58, 1.36, 0], [0.2, 0.82, 0.24], skin);
+  const rightArm = addBox(group, [0.58, 1.36, 0], [0.2, 0.82, 0.24], skin);
+  const leftLeg = addBox(group, [-0.22, 0.48, 0], [0.28, 0.9, 0.28], pants);
+  const rightLeg = addBox(group, [0.22, 0.48, 0], [0.28, 0.9, 0.28], pants);
   addBox(group, [-0.22, 0.05, -0.08], [0.36, 0.16, 0.42], dark);
   addBox(group, [0.22, 0.05, -0.08], [0.36, 0.16, 0.42], dark);
+  group.userData.limbs = { leftArm, rightArm, leftLeg, rightLeg };
 
   group.userData.label = createTextSprite(player.name || "Love", {
     fontSize: 44,
@@ -133,13 +151,35 @@ export function createPlayerSprite(world, player) {
 
   group.userData.statusDot = new THREE.Mesh(
     new THREE.SphereGeometry(0.12, 12, 12),
-    material(player.online ? 0x5de08d : 0xb0a2b4)
+    new THREE.MeshStandardMaterial({ color: player.online ? 0x5de08d : 0xb0a2b4, roughness: 0.65 })
   );
   group.userData.statusDot.position.set(0.86, 3.2, 0);
   group.add(group.userData.statusDot);
 
   world.scene.add(group);
   return group;
+}
+
+export function animatePlayer(group, moving, elapsed, action = "") {
+  const limbs = group.userData.limbs;
+  if (!limbs) return;
+  const pace = moving ? Math.sin(elapsed * 9) * 0.42 : Math.sin(elapsed * 2.2) * 0.06;
+  limbs.leftArm.rotation.x = pace;
+  limbs.rightArm.rotation.x = -pace;
+  limbs.leftLeg.rotation.x = -pace;
+  limbs.rightLeg.rotation.x = pace;
+  group.position.y = moving ? Math.abs(Math.sin(elapsed * 9)) * 0.08 : Math.sin(elapsed * 2) * 0.025;
+
+  if (action === "hug" || action === "hands") {
+    limbs.leftArm.rotation.z = -0.75;
+    limbs.rightArm.rotation.z = 0.75;
+  } else if (action === "kiss") {
+    group.rotation.z = Math.sin(elapsed * 4) * 0.04;
+  } else {
+    limbs.leftArm.rotation.z = 0;
+    limbs.rightArm.rotation.z = 0;
+    group.rotation.z = 0;
+  }
 }
 
 export function updatePlayerSprite(group, player, camera) {
@@ -172,7 +212,7 @@ export function destroyPlayerSprite(group, world) {
   group.traverse((node) => {
     node.geometry?.dispose?.();
     if (node.material?.map) node.material.map.dispose();
-    node.material?.dispose?.();
+    if (node.material?.map) node.material.dispose();
   });
 }
 
@@ -237,6 +277,38 @@ export function updateFloating(world) {
     item.sprite.material.dispose();
     return false;
   });
+}
+
+export function updateWorldEffects(world, weatherMode = "clear") {
+  const elapsed = performance.now() * 0.001;
+  const dayAmount = (Math.sin(Date.now() / 24000) + 1) / 2;
+  world.sun.intensity = weatherMode === "sunset" ? 1.25 : 1.45 + dayAmount * 1.1;
+  world.sun.color.set(weatherMode === "sunset" ? 0xff9f6e : 0xffffff);
+  world.scene.background.set(weatherMode === "sunset" ? 0xffc6a5 : dayAmount < 0.25 ? 0x232349 : 0xf5ecff);
+  world.scene.fog.color.copy(world.scene.background);
+  world.stars.visible = dayAmount < 0.35 || weatherMode === "snow";
+  world.fireflies.visible = dayAmount < 0.38 && weatherMode !== "rain";
+  if (world.fireflies.visible) animateFireflies(world.fireflies, elapsed);
+
+  const rain = world.weather.rain;
+  const snow = world.weather.snow;
+  rain.position.set(world.camera.position.x, 0, world.camera.position.z - 18);
+  snow.position.copy(rain.position);
+  rain.visible = weatherMode === "rain";
+  snow.visible = weatherMode === "snow";
+  if (rain.visible) animateWeather(rain, -0.95, elapsed);
+  if (snow.visible) animateWeather(snow, -0.22, elapsed);
+}
+
+export function setHouseWallColor(world, color) {
+  const value = Number.parseInt(String(color || "fff5fb").replace("#", ""), 16);
+  if (Number.isFinite(value)) {
+    world.houseWallMaterial.color.set(value);
+  }
+}
+
+export async function loadGLTFModel(url) {
+  return MODEL_LOADER.loadAsync(url);
 }
 
 export function createFurniture(world, type, x, y) {
@@ -361,10 +433,42 @@ function addPark(scene) {
   scene.add(park);
 }
 
-function addHouse(scene) {
+function addWaterfall(scene) {
+  const cliff = new THREE.Group();
+  cliff.position.set(toWorldX(420), 0, toWorldZ(1180));
+  addBox(cliff, [0, 4, 0], [8, 8, 3], material(0x8b8ca3));
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.2, 7.5),
+    new THREE.MeshStandardMaterial({ color: 0x9be7ff, transparent: true, opacity: 0.78, roughness: 0.2 })
+  );
+  water.position.set(0, 3.9, -1.56);
+  cliff.add(water);
+  scene.add(cliff);
+}
+
+function addMountain(scene) {
+  const mountain = new THREE.Group();
+  mountain.position.set(toWorldX(2050), 0, toWorldZ(1120));
+  addCone(mountain, [0, 7, 0], 9, 14, material(0x9b9dac));
+  addCone(mountain, [0, 13, 0], 3.8, 4.6, material(0xf5f2ff));
+  addBox(mountain, [0, 0.18, -7], [7, 0.36, 4], material(0xf7cfa9));
+  scene.add(mountain);
+}
+
+function addCafe(scene) {
+  const cafe = new THREE.Group();
+  cafe.position.set(toWorldX(1280), 0, toWorldZ(780));
+  addBox(cafe, [0, 1.35, 0], [5.8, 2.7, 4.2], material(0xffe3bd));
+  addBox(cafe, [0, 3, -0.2], [6.5, 0.55, 4.8], material(0xef4c9d));
+  addBox(cafe, [-1.6, 0.8, -2.15], [1.1, 1.6, 0.14], material(0x8d62d7));
+  addBox(cafe, [1.35, 1.6, -2.2], [1.55, 1.0, 0.12], material(0x94d4ff));
+  scene.add(cafe);
+}
+
+function addHouse(scene, houseWallMaterial) {
   const house = new THREE.Group();
   house.position.set(toWorldX(1765), 0, toWorldZ(415));
-  addBox(house, [0, 1.7, 0], [9.6, 3.4, 6.8], material(0xfff5fb));
+  addBox(house, [0, 1.7, 0], [9.6, 3.4, 6.8], houseWallMaterial);
   const roof = new THREE.Mesh(
     new THREE.ConeGeometry(6.8, 2.2, 4),
     material(0xf05fa8)
@@ -376,6 +480,79 @@ function addHouse(scene) {
   addBox(house, [-2.5, 0.85, -3.45], [1.45, 1.7, 0.16], material(0x8d62d7));
   addBox(house, [2.35, 2.0, -3.5], [1.6, 1.1, 0.12], material(0x94d4ff));
   scene.add(house);
+}
+
+function createStars() {
+  const geometry = new THREE.BufferGeometry();
+  const positions = [];
+  for (let i = 0; i < 420; i += 1) {
+    const radius = 75 + Math.random() * 90;
+    const angle = Math.random() * Math.PI * 2;
+    positions.push(Math.cos(angle) * radius, 38 + Math.random() * 70, Math.sin(angle) * radius);
+  }
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  return new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({ color: 0xffffff, size: 0.28, transparent: true, opacity: 0.86 })
+  );
+}
+
+function createFireflies() {
+  const geometry = new THREE.BufferGeometry();
+  const positions = [];
+  for (let i = 0; i < 90; i += 1) {
+    positions.push((Math.random() - 0.5) * 90, 1 + Math.random() * 5, (Math.random() - 0.5) * 90);
+  }
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const points = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({ color: 0xfff48a, size: 0.18, transparent: true, opacity: 0.8 })
+  );
+  points.visible = false;
+  return points;
+}
+
+function createWeather(scene) {
+  const rain = createParticleField(520, 0x9bd7ff, 0.08);
+  const snow = createParticleField(360, 0xffffff, 0.2);
+  rain.visible = false;
+  snow.visible = false;
+  scene.add(rain, snow);
+  return { rain, snow };
+}
+
+function createParticleField(count, color, size) {
+  const geometry = new THREE.BufferGeometry();
+  const positions = [];
+  for (let i = 0; i < count; i += 1) {
+    positions.push((Math.random() - 0.5) * 135, 8 + Math.random() * 55, (Math.random() - 0.5) * 135);
+  }
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  return new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({ color, size, transparent: true, opacity: 0.76 })
+  );
+}
+
+function animateWeather(points, fallSpeed, elapsed) {
+  const pos = points.geometry.attributes.position;
+  for (let i = 0; i < pos.count; i += 1) {
+    const y = pos.getY(i) + fallSpeed;
+    pos.setY(i, y < 0 ? 60 + ((i * 13 + elapsed) % 8) : y);
+    if (fallSpeed > -0.4) {
+      pos.setX(i, pos.getX(i) + Math.sin(elapsed + i) * 0.012);
+    }
+  }
+  pos.needsUpdate = true;
+}
+
+function animateFireflies(points, elapsed) {
+  const pos = points.geometry.attributes.position;
+  for (let i = 0; i < pos.count; i += 1) {
+    pos.setY(i, 1.5 + ((i * 0.13) % 4) + Math.sin(elapsed * 1.6 + i) * 0.25);
+    pos.setX(i, pos.getX(i) + Math.sin(elapsed + i) * 0.006);
+  }
+  pos.needsUpdate = true;
 }
 
 function addDecor(scene) {

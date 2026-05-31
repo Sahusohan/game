@@ -1,24 +1,24 @@
-# Our Little World
+# Our Little World 3D
 
-Our Little World is a private two-player virtual world for a boyfriend and girlfriend. It runs entirely in the browser with Vanilla JS, Phaser, Firebase Anonymous Auth, and Firebase Realtime Database, so it can be hosted directly on GitHub Pages.
-
+Our Little World 3D is a private two-player cozy virtual world built with Three.js, Firebase Anonymous Authentication, and Firebase Realtime Database. It is a static ES Modules app, so it runs directly on GitHub Pages with Firebase as the only backend.
 
 ## Features
 
-- Two-player rooms with invite links and anonymous Firebase sign-in.
-- Avatar selection, WASD movement, smooth partner interpolation, online/offline presence, and names above avatars.
-- Large pixel-art world with trees, flowers, benches, lake, park, beach, a shared house, and a soft day/night cycle.
-- Romantic actions: hearts, hug, kiss, hold hands, sit-together detection near benches, gifts, love meter, and anniversary counter.
-- Private real-time chat with emoji support, timestamps, and typing indicator.
-- Shared diary, memory gallery with image upload, shared home decoration, persistent furniture, synced ambient music, fullscreen, settings, and PWA support.
+- Two-player rooms with invite links, anonymous sign-in, online/offline presence, and Firebase sync.
+- Three.js third-person world with forest, flower gardens, lake, waterfall, beach, mountain viewpoint, park, café, shared house, stars, fog, weather, and day/night lighting.
+- 3D stylized avatars with idle/walk/run-style limb motion and action poses for hugs, kisses, hand holding, gifts, and hearts.
+- Third-person camera with smooth follow, mouse/touch look, wheel zoom, and mobile joystick.
+- Real-time chat with emoji support, typing indicator, message history, chat bubbles above characters, and browser voice messages.
+- Shared house decoration, wall colors, gifts, diary, anniversary counter, love meter, and memory gallery.
+- PWA support, Android/Desktop installability, offline app shell, GitHub Actions deployment, and GLTF/GLB loader support in `js/world.js`.
 
 ## Folder Structure
 
 ```text
 project/
+├── .github/workflows/pages.yml
 ├── index.html
-├── css/
-│   └── style.css
+├── css/style.css
 ├── js/
 │   ├── game.js
 │   ├── firebase.js
@@ -32,13 +32,13 @@ project/
 │   └── images/
 ├── manifest.webmanifest
 ├── sw.js
-├── README.md
-└── firebase.rules.json
+├── firebase.rules.json
+└── README.md
 ```
 
 ## Local Run
 
-Because the app uses ES modules, serve it over HTTP:
+Serve over HTTP because the app uses browser ES modules:
 
 ```bash
 python3 -m http.server 8000
@@ -48,37 +48,39 @@ Open `http://localhost:8000`.
 
 ## Firebase Setup
 
-1. Open the Firebase Console for `anonymousconfession-19707`.
+1. Open Firebase Console for `anonymousconfession-19707`.
 2. Enable **Authentication > Sign-in method > Anonymous**.
 3. Enable **Realtime Database**.
-4. Open **Realtime Database > Rules** and deploy the contents of `firebase.rules.json`.
-5. Use this data shape:
+4. Paste and publish the contents of `firebase.rules.json` in **Realtime Database > Rules**.
+
+Database shape:
 
 ```text
 rooms
 └── roomId
     ├── players
     ├── chat
-    ├── world
     ├── memories
+    ├── house
     ├── gifts
     ├── diary
-    └── settings
+    ├── settings
+    └── worldState
 ```
 
-The included rules allow only authenticated room members to read or write room data, allow a new anonymous user to claim only their own player slot, enforce a maximum of two players per room, and validate the main write shapes.
+The rules restrict room reads/writes to room members, use two fixed player slots for the two-player limit, and validate chat, memories, gifts, diary, house furniture, wall color, weather, and settings writes.
 
 ## GitHub Pages Deployment
 
 This project includes `.github/workflows/pages.yml`, so every push to `main` deploys automatically.
 
-1. Push this folder to a GitHub repository.
+1. Push the project to GitHub.
 2. Go to **Settings > Pages**.
-3. Under **Build and deployment**, set **Source** to `GitHub Actions`.
-4. Push to the `main` branch.
-5. Open the **Actions** tab and wait for **Deploy GitHub Pages** to finish.
+3. Set **Build and deployment > Source** to `GitHub Actions`.
+4. Push to `main`.
+5. Wait for **Actions > Deploy GitHub Pages** to complete.
 
-Invite links use `?room=ROOM-CODE`, for example:
+Invite links use:
 
 ```text
 https://yourname.github.io/your-repo/?room=LOVE-AB12
@@ -86,6 +88,6 @@ https://yourname.github.io/your-repo/?room=LOVE-AB12
 
 ## Notes
 
-- Memory photos are compressed in the browser and stored as base64 strings in Realtime Database. For a larger production gallery, Firebase Storage would be a better long-term home for images.
-- Phaser textures are generated at runtime, so the game does not require external sprite files.
-- Background music is a lightweight Web Audio ambient tone so the project remains asset-free and GitHub Pages ready.
+- GLTF/GLB support is included through `GLTFLoader`; place optimized models in `assets/models/` and load them from `js/world.js`.
+- Uploaded photos and voice messages are compressed/base64 and stored in Realtime Database for a small private app. For larger production use, move media to Firebase Storage.
+- The renderer targets lightweight geometry, frustum culling defaults, shared materials, and lazy browser-loaded CDN modules for GitHub Pages compatibility.

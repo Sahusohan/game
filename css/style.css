@@ -114,6 +114,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid rgba(141, 98, 215, 0.22);
@@ -129,6 +130,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: var(--purple);
   box-shadow: 0 0 0 4px rgba(141, 98, 215, 0.14);
@@ -217,7 +219,7 @@ textarea:focus {
   display: block;
   width: 100% !important;
   height: 100% !important;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .topbar,
@@ -380,8 +382,19 @@ textarea:focus {
 
 .chat-form {
   display: grid;
-  grid-template-columns: 1fr 46px;
+  grid-template-columns: 1fr 46px 46px;
   gap: 8px;
+}
+
+.chat-form audio,
+.message audio {
+  width: 100%;
+  margin-top: 8px;
+}
+
+#voice-button.recording {
+  background: #ef4c9d;
+  color: #fff;
 }
 
 .action-dock {
@@ -473,6 +486,21 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.78);
   color: var(--purple);
   font-weight: 900;
+}
+
+.swatch-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.swatch-row button {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--swatch);
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  box-shadow: 0 8px 18px rgba(141, 98, 215, 0.14);
 }
 
 .hint {

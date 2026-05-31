@@ -52,15 +52,32 @@
           ".indexOn": ["createdAt"],
           "$messageId": {
             ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
-            ".validate": "newData.hasChildren(['uid','name','text','createdAt']) && newData.child('uid').val() === auth.uid && newData.child('name').isString() && newData.child('name').val().length <= 18 && newData.child('text').isString() && newData.child('text').val().length <= 220"
+            ".validate": "newData.hasChildren(['uid','name','text','createdAt']) && newData.child('uid').val() === auth.uid && newData.child('name').isString() && newData.child('name').val().length <= 18 && newData.child('text').isString() && newData.child('text').val().length <= 220 && (!newData.child('type').exists() || newData.child('type').val().matches(/^(voice)$/)) && (!newData.child('audio').exists() || (newData.child('audio').isString() && newData.child('audio').val().length <= 700000))"
           }
         },
-        "world": {
+        "house": {
           "furniture": {
             "$itemId": {
               ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
               ".validate": "newData.hasChildren(['type','x','y','placedBy','createdAt']) && newData.child('placedBy').val() === auth.uid && newData.child('type').isString() && newData.child('type').val().matches(/^(sofa|lamp|plant|rug|table|frame)$/) && newData.child('x').isNumber() && newData.child('x').val() >= 1550 && newData.child('x').val() <= 1980 && newData.child('y').isNumber() && newData.child('y').val() >= 250 && newData.child('y').val() <= 580"
             }
+          },
+          "walls": {
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
+            ".validate": "newData.hasChildren(['color','updatedAt']) && newData.child('color').isString() && newData.child('color').val().matches(/^[0-9a-fA-F]{6}$/) && newData.child('updatedAt').isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "worldState": {
+          ".write": "auth != null && (root.child('rooms').child($roomId).child('players').child('slot1').child('uid').val() === auth.uid || root.child('rooms').child($roomId).child('players').child('slot2').child('uid').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['weather']) || newData.hasChildren(['updatedAt'])",
+          "weather": {
+            ".validate": "newData.isString() && newData.val().matches(/^(clear|rain|snow|sunset)$/)"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber()"
           },
           "$other": {
             ".validate": false

@@ -30,6 +30,18 @@ export class Chat {
     });
   }
 
+  sendVoice(audio) {
+    if (!audio) return Promise.resolve();
+    return set(push(roomRef(this.roomId, "chat")), {
+      uid: auth.currentUser.uid,
+      name: this.profile.name,
+      text: "Voice message",
+      type: "voice",
+      audio,
+      createdAt: serverTimestamp()
+    });
+  }
+
   listenMessages(callback) {
     const latest = query(roomRef(this.roomId, "chat"), orderByChild("createdAt"), limitToLast(80));
     return onChildAdded(latest, (snapshot) => callback(snapshot.key, snapshot.val()));

@@ -17,16 +17,18 @@ import { Multiplayer } from "./multiplayer.js";
 import { Chat } from "./chat.js";
 import {
   BENCHES,
-  WORLD_SIZE,
   createWorld,
   createPlayerSprite,
   updatePlayerSprite,
+  animatePlayer,
   destroyPlayerSprite,
   setPlayerPosition,
   createFloatingText,
   createChatBubble,
   updateFloating,
+  updateWorldEffects,
   createFurniture,
+  setHouseWallColor,
   isInsideHouse,
   clampToWorld,
   toWorldX,
@@ -55,7 +57,9 @@ const state = {
   joystick: { active: false, x: 0, y: 0 },
   keys: new Set(),
   localPlayer: null,
-  animationFrame: 0
+  animationFrame: 0,
+  camera: { yaw: 0, zoom: 1, dragging: false, lastX: 0 },
+  weather: "clear"
 };
 
 async function boot() {
@@ -116,7 +120,9 @@ async function enterRoom(roomId, profile) {
     setupCollapsibleChat();
     setupJoystick();
     startGame();
+    setupCameraControls();
     listenPlayers();
+    listenRoomSettings();
     listenConnection();
     listenMusic();
     history.replaceState(null, "", `?room=${encodeURIComponent(roomId)}`);
@@ -138,6 +144,7 @@ function startGame() {
   };
   const localSprite = createPlayerSprite(state.world, state.localPlayer);
   state.sprites.set(state.multiplayer.playerKey, localSprite);
+  listenWorldState();
   animate();
 }
 
@@ -159,7 +166,7 @@ function animate() {
   updateLocalPlayer(delta);
   updateRemotePlayers(delta);
   updateCamera(delta);
-  updateDayNight();
+  updateWorldEffects(world, state.weather);
   updateFloating(world);
   world.renderer.render(world.scene, world.camera);
   state.animationFrame = requestAnimationFrame(animate);
@@ -190,6 +197,7 @@ function updateLocalPlayer(delta) {
 
   state.localPlayer.direction = direction;
   setPlayerPosition(sprite, state.localPlayer.x, state.localPlayer.y);
+  animatePlayer(sprite, Boolean(moveX || moveY), performance.now() * 0.001, state.localPlayer.action);
   updatePlayerSprite(sprite, state.localPlayer, state.world.camera);
   state.multiplayer.updatePosition({
     x: state.localPlayer.x,
@@ -211,6 +219,7 @@ function updateRemotePlayers(delta) {
     sprite.userData.mapX = player.x;
     sprite.userData.mapY = player.y;
     rotatePlayer(sprite, player.direction || "down");
+    animatePlayer(sprite, Math.hypot(targetX - sprite.position.x, targetZ - sprite.position.z) > 0.02, performance.now() * 0.001, player.action);
     updatePlayerSprite(sprite, player, state.world.camera);
   }
 }
@@ -221,20 +230,15 @@ function updateCamera(delta) {
   const camera = state.world.camera;
   const target = sprite.position;
   const desired = {
-    x: target.x,
+    x: target.x + Math.sin(state.camera.yaw) * 18 * state.camera.zoom,
     y: window.innerWidth < 760 ? 28 : 36,
-    z: target.z + (window.innerWidth < 760 ? 34 : 42)
+    z: target.z + Math.cos(state.camera.yaw) * (window.innerWidth < 760 ? 34 : 42) * state.camera.zoom
   };
   const t = Math.min(1, delta * 4);
   camera.position.x += (desired.x - camera.position.x) * t;
   camera.position.y += (desired.y - camera.position.y) * t;
   camera.position.z += (desired.z - camera.position.z) * t;
   camera.lookAt(target.x, 1.5, target.z);
-}
-
-function updateDayNight() {
-  const dayAmount = (Math.sin(Date.now() / 24000) + 1) / 2;
-  state.world.nightOverlay.intensity = (1 - dayAmount) * 0.8;
 }
 
 function getKeyboardVector() {
@@ -296,6 +300,30 @@ function setupJoystick() {
   base.addEventListener("lostpointercapture", reset);
 }
 
+function setupCameraControls() {
+  const container = qs("#game-container");
+  if (!container || container.dataset.cameraReady) return;
+  container.dataset.cameraReady = "true";
+  container.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    state.camera.zoom = Math.max(0.65, Math.min(1.45, state.camera.zoom + Math.sign(event.deltaY) * 0.08));
+  }, { passive: false });
+  container.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 2) return;
+    state.camera.dragging = true;
+    state.camera.lastX = event.clientX;
+  });
+  container.addEventListener("pointermove", (event) => {
+    if (!state.camera.dragging) return;
+    state.camera.yaw -= (event.clientX - state.camera.lastX) * 0.008;
+    state.camera.lastX = event.clientX;
+  });
+  window.addEventListener("pointerup", () => {
+    state.camera.dragging = false;
+  });
+  container.addEventListener("contextmenu", (event) => event.preventDefault());
+}
+
 function setupCollapsibleChat() {
   const panel = qs("#side-panel");
   const toggle = qs("#chat-toggle");
@@ -322,7 +350,14 @@ function listenPlayers() {
         state.sprites.set(playerKey, sprite);
       }
       if (playerKey === state.multiplayer.playerKey) {
-        state.localPlayer = { ...state.localPlayer, ...player, uid: auth.currentUser.uid };
+        state.localPlayer = {
+          ...state.localPlayer,
+          name: player.name,
+          avatar: player.avatar,
+          online: player.online,
+          action: player.action,
+          uid: auth.currentUser.uid
+        };
       }
       handlePlayerAction(player, sprite);
       updatePlayerSprite(sprite, player, state.world.camera);
@@ -334,6 +369,38 @@ function listenPlayers() {
         state.sprites.delete(playerKey);
       }
     }
+  });
+}
+
+function listenRoomSettings() {
+  const select = qs("#weather-select");
+  select?.addEventListener("change", async () => {
+    state.weather = select.value;
+    await update(roomRef(state.roomId, "worldState"), {
+      weather: select.value,
+      updatedAt: serverTimestamp()
+    });
+  });
+
+  document.querySelectorAll("[data-wall-color]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const color = button.dataset.wallColor;
+      setHouseWallColor(state.world, color);
+      await update(roomRef(state.roomId, "house/walls"), {
+        color,
+        updatedAt: serverTimestamp()
+      });
+    });
+  });
+
+  onValue(roomRef(state.roomId, "worldState"), (snapshot) => {
+    const worldState = snapshot.val() || {};
+    state.weather = worldState.weather || "clear";
+    if (select && select.value !== state.weather) select.value = state.weather;
+  });
+
+  onValue(roomRef(state.roomId, "house/walls"), (snapshot) => {
+    setHouseWallColor(state.world, snapshot.val()?.color || "fff5fb");
   });
 }
 
@@ -377,7 +444,7 @@ function showChatBubble(message) {
 }
 
 function listenWorldState() {
-  onValue(roomRef(state.roomId, "world/furniture"), (snapshot) => {
+  onValue(roomRef(state.roomId, "house/furniture"), (snapshot) => {
     const items = snapshot.val() || {};
     for (const [id, node] of state.furniture.entries()) {
       if (!items[id]) {
@@ -394,7 +461,7 @@ function listenWorldState() {
 }
 
 async function placeFurniture(type, x, y) {
-  await set(push(roomRef(state.roomId, "world/furniture")), {
+  await set(push(roomRef(state.roomId, "house/furniture")), {
     type,
     x: Math.round(x),
     y: Math.round(y),

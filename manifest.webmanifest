@@ -1,7 +1,7 @@
 {
-  "name": "Our Little World",
-  "short_name": "Little World",
-  "description": "A private multiplayer pixel world for two.",
+  "name": "Our Little World 3D",
+  "short_name": "Little 3D",
+  "description": "A private cozy 3D multiplayer world for two.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffe8f4",
