@@ -9,10 +9,10 @@ export const BENCHES = [
 ];
 
 const AVATAR_COLORS = {
-  rose: { body: 0xf05fa8, accent: 0xffbddf },
-  mint: { body: 0x55caa4, accent: 0xc8ffe8 },
-  sunset: { body: 0xff9864, accent: 0xffd37d },
-  moon: { body: 0x6d6ee8, accent: 0xdfe9ff }
+  rose: { shirt: 0xf05fa8, hair: 0x5a3328, pants: 0x6d6ee8, accent: 0xffbddf },
+  mint: { shirt: 0x55caa4, hair: 0x2f2730, pants: 0x8d62d7, accent: 0xc8ffe8 },
+  sunset: { shirt: 0xff9864, hair: 0x6b3f22, pants: 0x4b67d1, accent: 0xffd37d },
+  moon: { shirt: 0x6d6ee8, hair: 0x352b5f, pants: 0x26395f, accent: 0xdfe9ff }
 };
 
 export function createTextures(scene) {
@@ -24,14 +24,22 @@ export function createTextures(scene) {
 
   Object.entries(AVATAR_COLORS).forEach(([name, colors]) => {
     g.clear();
-    rect(10, 4, 12, 8, colors.accent);
-    rect(6, 12, 20, 18, colors.body);
-    rect(10, 30, 6, 10, 0x3d2a44);
-    rect(20, 30, 6, 10, 0x3d2a44);
-    rect(10, 16, 4, 4, 0xffffff);
-    rect(22, 16, 4, 4, 0xffffff);
-    rect(13, 20, 10, 3, 0x432947);
-    g.generateTexture(`avatar-${name}`, 36, 44);
+    rect(13, 5, 16, 6, colors.hair);
+    rect(10, 11, 22, 18, 0xf2b38f);
+    rect(10, 10, 5, 10, colors.hair);
+    rect(27, 10, 5, 10, colors.hair);
+    rect(15, 17, 4, 4, 0x432947);
+    rect(24, 17, 4, 4, 0x432947);
+    rect(18, 24, 8, 2, 0xa74f68);
+    rect(12, 30, 18, 16, colors.shirt);
+    rect(8, 32, 5, 15, 0xf2b38f);
+    rect(30, 32, 5, 15, 0xf2b38f);
+    rect(16, 46, 5, 9, colors.pants);
+    rect(23, 46, 5, 9, colors.pants);
+    rect(14, 54, 8, 4, 0x31243a);
+    rect(22, 54, 8, 4, 0x31243a);
+    rect(15, 31, 12, 3, colors.accent);
+    g.generateTexture(`avatar-${name}`, 42, 60);
   });
 
   g.clear();
@@ -162,22 +170,22 @@ export function createPlayerSprite(scene, player) {
   const sprite = scene.physics.add.sprite(player.x, player.y, `avatar-${player.avatar || "rose"}`);
   sprite.setCollideWorldBounds(true);
   sprite.setDepth(10);
-  sprite.nameLabel = scene.add.text(player.x, player.y - 42, player.name || "Love", {
+  sprite.nameLabel = scene.add.text(player.x, player.y - 50, player.name || "Love", {
     fontFamily: "monospace",
     fontSize: "13px",
     color: "#432947",
     backgroundColor: "rgba(255,255,255,0.7)",
     padding: { x: 5, y: 2 }
   }).setOrigin(0.5).setDepth(11);
-  sprite.statusDot = scene.add.circle(player.x + 20, player.y - 28, 4, player.online ? 0x5de08d : 0xb0a2b4).setDepth(11);
+  sprite.statusDot = scene.add.circle(player.x + 22, player.y - 35, 4, player.online ? 0x5de08d : 0xb0a2b4).setDepth(11);
   return sprite;
 }
 
 export function updatePlayerSprite(sprite, player) {
   sprite.nameLabel.setText(player.name || "Love");
-  sprite.nameLabel.setPosition(sprite.x, sprite.y - 42);
+  sprite.nameLabel.setPosition(sprite.x, sprite.y - 50);
   sprite.statusDot.setFillStyle(player.online ? 0x5de08d : 0xb0a2b4);
-  sprite.statusDot.setPosition(sprite.x + 20, sprite.y - 28);
+  sprite.statusDot.setPosition(sprite.x + 22, sprite.y - 35);
 }
 
 export function destroyPlayerSprite(sprite) {

@@ -194,9 +194,10 @@ async function enterRoom(roomId, profile) {
     qs("#join-screen").classList.add("hidden");
     qs("#game-screen").classList.remove("hidden");
     setupChrome(roomId);
-    setupChatUI(new Chat(roomId, profile, state.multiplayer));
+    setupChatUI(new Chat(roomId, profile, state.multiplayer), showChatBubble);
     setupSharedPanels(roomId, getLocalPosition, placeFurniture);
     setupActions(state.multiplayer, roomId, state.music);
+    setupCollapsibleChat();
     setupJoystick();
     startGame();
     listenPlayers();
@@ -266,6 +267,18 @@ function setupJoystick() {
   base.addEventListener("pointerup", reset);
   base.addEventListener("pointercancel", reset);
   base.addEventListener("lostpointercapture", reset);
+}
+
+function setupCollapsibleChat() {
+  const panel = qs("#side-panel");
+  const toggle = qs("#chat-toggle");
+  if (!panel || !toggle || toggle.dataset.ready) return;
+  toggle.dataset.ready = "true";
+
+  toggle.addEventListener("click", () => {
+    const collapsed = panel.classList.toggle("collapsed");
+    toggle.textContent = collapsed ? "Show chat" : "Hide chat";
+  });
 }
 
 function startGame() {
@@ -361,6 +374,45 @@ function makeFloatingText(scene, x, y, text, color) {
     duration: 1400,
     ease: "Sine.easeOut",
     onComplete: () => node.destroy()
+  });
+}
+
+function showChatBubble(message) {
+  const scene = state.scene;
+  if (!scene || !message?.text) return;
+
+  const entry = Object.entries(state.players).find(([, player]) => player.uid === message.uid);
+  const sprite = message.uid === auth.currentUser.uid
+    ? scene.localSprite
+    : entry ? state.sprites.get(entry[0]) : null;
+  if (!sprite) return;
+
+  const bubble = scene.add.text(sprite.x, sprite.y - 78, message.text.slice(0, 90), {
+    fontFamily: "monospace",
+    fontSize: "13px",
+    color: "#432947",
+    backgroundColor: "rgba(255,255,255,0.88)",
+    padding: { x: 8, y: 5 },
+    wordWrap: { width: 180 }
+  }).setOrigin(0.5, 1).setDepth(140);
+
+  const follow = () => {
+    if (!bubble.active || !sprite.active) return;
+    bubble.setPosition(sprite.x, sprite.y - 78);
+  };
+  scene.events.on("update", follow);
+  scene.time.delayedCall(4200, () => {
+    scene.tweens.add({
+      targets: bubble,
+      alpha: 0,
+      y: bubble.y - 10,
+      duration: 800,
+      ease: "Sine.easeIn",
+      onComplete: () => {
+        scene.events.off("update", follow);
+        bubble.destroy();
+      }
+    });
   });
 }
 

@@ -32,11 +32,12 @@ export function setupTabs() {
   });
 }
 
-export function setupChatUI(chat) {
+export function setupChatUI(chat, onMessage) {
   const form = qs("#chat-form");
   const input = qs("#chat-input");
   const messages = qs("#messages");
   const typing = qs("#typing-indicator");
+  const chatStartedAt = Date.now();
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -60,6 +61,9 @@ export function setupChatUI(chat) {
     node.querySelector("p").textContent = message.text || "";
     messages.appendChild(node);
     messages.scrollTop = messages.scrollHeight;
+    if ((message.createdAt || Date.now()) >= chatStartedAt - 1500) {
+      onMessage?.(message);
+    }
   });
 
   chat.listenTyping((names) => {
