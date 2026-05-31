@@ -65,6 +65,10 @@ const state = {
     syncing: false,
     lastRoleKey: "",
     lastResultKey: ""
+  },
+  interaction: {
+    lastId: "",
+    motion: null
   }
 };
 
@@ -122,7 +126,7 @@ async function enterRoom(roomId, profile) {
     setupChrome(roomId);
     setupChatUI(new Chat(roomId, profile, state.multiplayer), showChatBubble);
     setupSharedPanels(roomId, getLocalPosition, placeFurniture);
-    setupActions(state.multiplayer, roomId, state.music);
+    setupActions(state.multiplayer, roomId, state.music, handleActionRequest);
     setupCollapsibleChat();
     setupJoystick();
     setupChaseUI();
@@ -131,6 +135,7 @@ async function enterRoom(roomId, profile) {
     listenPlayers();
     listenRoomSettings();
     listenChaseGame();
+    listenPairInteractions();
     listenConnection();
     listenMusic();
     history.replaceState(null, "", `?room=${encodeURIComponent(roomId)}`);
@@ -185,6 +190,7 @@ function updateLocalPlayer(delta) {
   if (!state.localPlayer || !state.multiplayer) return;
   const sprite = state.sprites.get(state.multiplayer.playerKey);
   if (!sprite) return;
+  if (applyPairInteractionMotion(sprite)) return;
 
   const keyboardVector = getKeyboardVector();
   const joystickVector = state.joystick.active ? state.joystick : { x: 0, y: 0 };
@@ -213,6 +219,64 @@ function updateLocalPlayer(delta) {
     y: state.localPlayer.y,
     direction
   });
+}
+
+function applyPairInteractionMotion(sprite) {
+  const motion = state.interaction.motion;
+  if (!motion || !state.localPlayer || !state.multiplayer) return false;
+
+  const now = performance.now();
+  const local = state.localPlayer;
+  const partnerPos = { x: motion.partnerTargetX, y: motion.partnerTargetY };
+
+  if (motion.phase === "approach") {
+    const t = Math.min(1, (now - motion.startAt) / motion.approachMs);
+    const eased = t * t * (3 - 2 * t);
+    local.x = clampToWorld(motion.startX + (motion.targetX - motion.startX) * eased);
+    local.y = clampToWorld(motion.startY + (motion.targetY - motion.startY) * eased);
+    local.direction = directionFromDelta(partnerPos.x - local.x, partnerPos.y - local.y, local.direction);
+    local.action = "";
+    setPlayerPosition(sprite, local.x, local.y);
+    rotatePlayer(sprite, local.direction);
+    animatePlayer(sprite, true, performance.now() * 0.001, "");
+    updatePlayerSprite(sprite, local, state.world.camera);
+    state.multiplayer.updatePosition({
+      x: local.x,
+      y: local.y,
+      direction: local.direction
+    }, true);
+    if (t >= 1) {
+      motion.phase = "hold";
+      motion.holdStart = now;
+      local.action = motion.action;
+      if (!motion.sentAction) {
+        state.multiplayer.sendAction(motion.action).catch(() => {});
+        motion.sentAction = true;
+      }
+    }
+    return true;
+  }
+
+  local.x = clampToWorld(motion.targetX);
+  local.y = clampToWorld(motion.targetY);
+  local.direction = directionFromDelta(partnerPos.x - local.x, partnerPos.y - local.y, local.direction);
+  local.action = motion.action;
+  setPlayerPosition(sprite, local.x, local.y);
+  rotatePlayer(sprite, local.direction);
+  animatePlayer(sprite, false, performance.now() * 0.001, motion.action);
+  updatePlayerSprite(sprite, local, state.world.camera);
+  state.multiplayer.updatePosition({
+    x: local.x,
+    y: local.y,
+    direction: local.direction
+  }, true);
+
+  if (now - motion.holdStart >= motion.holdMs) {
+    local.action = "";
+    state.multiplayer.sendAction("").catch(() => {});
+    state.interaction.motion = null;
+  }
+  return true;
 }
 
 function updateRemotePlayers(delta) {
@@ -257,6 +321,12 @@ function getKeyboardVector() {
     Number(state.keys.has("w") || state.keys.has("arrowup"));
   const length = Math.hypot(x, y) || 1;
   return { x: x / length, y: y / length };
+}
+
+function directionFromDelta(dx, dy, fallback = "down") {
+  if (!dx && !dy) return fallback;
+  if (Math.abs(dx) > Math.abs(dy)) return dx < 0 ? "left" : "right";
+  return dy < 0 ? "up" : "down";
 }
 
 function setupJoystick() {
@@ -352,6 +422,76 @@ function setupChaseUI() {
   button.addEventListener("click", () => startChaseGame());
 }
 
+async function handleActionRequest(action) {
+  if (action !== "hug" && action !== "kiss") return false;
+  await triggerPairInteraction(action);
+  return true;
+}
+
+async function triggerPairInteraction(action) {
+  if (state.interaction.motion) {
+    showToast("Please wait for this interaction to finish");
+    return;
+  }
+
+  const pair = pickPartnerForInteraction();
+  if (!pair) {
+    showToast("Your partner needs to be online");
+    return;
+  }
+
+  const spacing = action === "kiss" ? 36 : 44;
+  const targets = computePairTargets(pair.local, pair.partner, spacing);
+  const interaction = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: action,
+    fromUid: auth.currentUser.uid,
+    toUid: pair.partner.uid,
+    fromX: targets.local.x,
+    fromY: targets.local.y,
+    toX: targets.partner.x,
+    toY: targets.partner.y,
+    approachMs: 480,
+    durationMs: 1100,
+    status: "active",
+    startedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+
+  await set(roomRef(state.roomId, "worldState/interaction"), interaction);
+}
+
+function pickPartnerForInteraction() {
+  if (!state.localPlayer) return null;
+  const partner = Object.values(state.players).find((player) => (
+    player?.uid &&
+    player.uid !== auth.currentUser.uid &&
+    player.online
+  ));
+  if (!partner) return null;
+  return { local: state.localPlayer, partner };
+}
+
+function computePairTargets(local, partner, gap) {
+  const dx = (partner.x ?? 0) - (local.x ?? 0);
+  const dy = (partner.y ?? 0) - (local.y ?? 0);
+  const length = Math.hypot(dx, dy) || 1;
+  const ux = dx / length;
+  const uy = dy / length;
+  const midX = (local.x + partner.x) / 2;
+  const midY = (local.y + partner.y) / 2;
+  return {
+    local: {
+      x: Math.round(clampToWorld(midX - ux * (gap / 2))),
+      y: Math.round(clampToWorld(midY - uy * (gap / 2)))
+    },
+    partner: {
+      x: Math.round(clampToWorld(midX + ux * (gap / 2))),
+      y: Math.round(clampToWorld(midY + uy * (gap / 2)))
+    }
+  };
+}
+
 async function startChaseGame() {
   const players = Object.values(state.players).filter((player) => player?.uid);
   if (players.length < 2) {
@@ -372,7 +512,7 @@ async function startChaseGame() {
     winnerUid: "",
     reason: "",
     durationSec: 70,
-    catchDistance: 90,
+    catchDistance: 30,
     startedAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   }).finally(() => {
@@ -387,6 +527,45 @@ function listenChaseGame() {
     announceChaseRole();
     announceChaseResult();
   });
+}
+
+function listenPairInteractions() {
+  onValue(roomRef(state.roomId, "worldState/interaction"), (snapshot) => {
+    const interaction = snapshot.val();
+    if (!interaction?.id || interaction.status !== "active") return;
+    if (interaction.id === state.interaction.lastId) return;
+    state.interaction.lastId = interaction.id;
+    startPairInteraction(interaction);
+  });
+}
+
+function startPairInteraction(interaction) {
+  const isFrom = interaction.fromUid === auth.currentUser.uid;
+  const isTo = interaction.toUid === auth.currentUser.uid;
+  if (!isFrom && !isTo) return;
+  if (!state.localPlayer) return;
+
+  const action = interaction.type === "kiss" ? "kiss" : "hug";
+  const targetX = clampToWorld(isFrom ? interaction.fromX : interaction.toX);
+  const targetY = clampToWorld(isFrom ? interaction.fromY : interaction.toY);
+  const partnerTargetX = clampToWorld(isFrom ? interaction.toX : interaction.fromX);
+  const partnerTargetY = clampToWorld(isFrom ? interaction.toY : interaction.fromY);
+
+  state.interaction.motion = {
+    id: interaction.id,
+    action,
+    phase: "approach",
+    startAt: performance.now(),
+    startX: state.localPlayer.x,
+    startY: state.localPlayer.y,
+    targetX,
+    targetY,
+    partnerTargetX,
+    partnerTargetY,
+    approachMs: Number(interaction.approachMs) > 0 ? Number(interaction.approachMs) : 480,
+    holdMs: Number(interaction.durationMs) > 0 ? Number(interaction.durationMs) : 1100,
+    sentAction: false
+  };
 }
 
 function updateChaseHud() {
@@ -451,9 +630,9 @@ function updateChaseGame() {
   const thief = getPlayerByUid(game.thiefUid);
   if (!police || !thief) return;
 
-  const catchDistance = Number(game.catchDistance || 90);
+  const catchDistance = Math.max(18, Number(game.catchDistance || 30));
   const distance = Math.hypot(police.x - thief.x, police.y - thief.y);
-  if (getLocalRole(game) === "police" && distance <= catchDistance) {
+  if (distance <= catchDistance && getLocalRole(game)) {
     finishChaseGame(game.policeUid, "caught");
     return;
   }

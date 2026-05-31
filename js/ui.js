@@ -212,10 +212,12 @@ export function setupSharedPanels(roomId, getLocalPosition, placeFurniture) {
   });
 }
 
-export function setupActions(multiplayer, roomId, musicController) {
+export function setupActions(multiplayer, roomId, musicController, onAction) {
   document.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
       const action = button.dataset.action;
+      const handled = await onAction?.(action);
+      if (handled) return;
       if (action === "gift") {
         await set(push(roomRef(roomId, "gifts")), {
           uid: auth.currentUser.uid,
